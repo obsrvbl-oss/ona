@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e
+
+# systemd services
+rm -f /usr/lib/systemd/system/obsrvbl-ona.service
+
+# All ona-service files
+rm -rf /opt/obsrvbl-ona/

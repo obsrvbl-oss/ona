@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+# Upstart services
+initctl stop obsrvbl-ona > /dev/null || :
+
+# systemd services
+systemctl stop obsrvbl-ona > /dev/null || :
+systemctl disable obsrvbl-ona > /dev/null || :

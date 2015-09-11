@@ -1,0 +1,26 @@
+{
+    "variables": {
+        "aws_access_key": "{{ env `AWS_ACCESS_KEY` }}",
+        "aws_secret_key": "{{ env `AWS_SECRET_KEY` }}"
+    },
+    "builders": [{
+        "type": "amazon-ebs",
+        "access_key": "{{ user `aws_access_key` }}",
+        "secret_key": "{{ user `aws_secret_key` }}",
+        "region": "us-east-1",
+        "source_ami": "ami-1ecae776",
+        "instance_type": "m3.medium",
+        "ssh_username": "ec2-user",
+        "ami_name": "obsrvbl-ona-service - {{ timestamp }}"
+    }],
+    "provisioners": [{
+        "type": "shell",
+        "inline": [
+            "sleep 20",
+            "sudo yum install --assumeyes squid tcpdump",
+            "sudo chkconfig squid on",
+            "curl -O https://s3.amazonaws.com/onstatic/ona/master/ona-service_RHEL_6_amd64.rpm",
+            "sudo yum install --assumeyes ona-service_RHEL_6_amd64.rpm"
+        ]
+    }]
+}

@@ -1,0 +1,93 @@
+#!/bin/sh
+# This is a config file for ona-service scripts
+# It can be manually managed or managed via the Observable portal
+
+set -a
+
+# By default, allow config vars to be over-written via the web portal
+OBSRVBL_MANAGE_MODE="auto"
+
+# CONFIG_AUTO is for config vars from the web portal.
+# CONFIG_LOCAL is for user-specified config vars, which take precedence
+OBSRVBL_CONFIG_AUTO="/opt/obsrvbl-ona/config.auto"
+OBSRVBL_CONFIG_LOCAL="/opt/obsrvbl-ona/config.local"
+
+# URI for Observable Networks endpoint
+OBSRVBL_HOST="https://sensor.ext.obsrvbl.com"
+
+# Service key (if needed)
+# OBSRVBL_SERVICE_KEY=""
+# Set the HTTPS_PROXY variable if you're using a proxy server
+# HTTPS_PROXY=""
+
+##
+# pna-monitor
+##
+OBSRVBL_PNA_SERVICE="true"
+
+# Interfaces the pna software should monitor
+OBSRVBL_PNA_IFACES=`ls -1 /sys/class/net/ | grep -v "^lo"`
+
+# Location of file defining networks and network ids to assign
+OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+
+# Location to buffer pna files before transfer
+PNA_LOGDIR="/opt/obsrvbl-ona/logs/pna"
+
+##
+# netflow-monitor
+##
+OBSRVBL_NETFLOW_SERVICE="false"
+
+# Location to buffer netflow files before transfer
+OBSRVBL_NETFLOW_LOGDIR="/opt/obsrvbl-ona/logs/netflow"
+
+##
+# log-watcher
+##
+OBSRVBL_LOG_WATCHER="true"
+
+##
+# hostname-resolver
+##
+OBSRVBL_HOSTNAME_RESOLVER="true"
+
+##
+# notification-publisher
+##
+OBSRVBL_NOTIFICATION_PUBLISHER="true"
+
+##
+# pdns-capturer
+##
+OBSRVBL_PDNS_CAPTURER="true"
+OBSRVBL_PDNS_PCAP_DIR="obsrvbl_pdns"
+OBSRVBL_PDNS_CAPTURE_IFACE="any"
+OBSRVBL_PDNS_CAPTURE_SECONDS="600"
+OBSRVBL_PDNS_PPS_LIMIT="100"
+
+##
+# arp-capturer
+##
+OBSRVBL_ARP_CAPTURER="false"
+OBSRVBL_ARP_PCAP_DIR="obsrvbl_arp"
+OBSRVBL_ARP_CAPTURE_IFACE="any"
+OBSRVBL_ARP_CAPTURE_SECONDS="600"
+OBSRVBL_ARP_PPS_LIMIT="100"
+
+##
+# ona-ossec-alert-watcher
+##
+OBSRVBL_SERVICE_OSSEC="false"
+OBSRVBL_OSSEC_ALERTS_PATH="/opt/obsrvbl-ossec/logs/alerts/alerts.json"
+
+##
+# ona-suricata-alert-watcher
+##
+OBSRVBL_SERVICE_SURICATA="false"
+
+# load up auto and local config
+[ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO
+[ -f $OBSRVBL_CONFIG_LOCAL ] && . $OBSRVBL_CONFIG_LOCAL
+
+set +a
