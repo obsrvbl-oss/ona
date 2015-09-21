@@ -1,0 +1,123 @@
+#!/bin/bash
+#
+# "$Id$"
+#
+#  Startup/shutdown script for the Passive Network Appliance (PNA).
+#
+#  chkconfig: 2345 95 05
+#  description: Startup/shutdown script for the Passive Network \
+#               Appliacte (PNA).
+
+##
+# Configuration settings are in service/config
+##
+
+# # # # # # # # # # # # # # # # # # # # # # # # # #
+#  Nothing below this point should need to change #
+# # # # # # # # # # # # # # # # # # # # # # # # # #
+SERVICE=pna-service
+
+export PNA_DIR=$(dirname $(readlink -f $0))
+
+# Fetch the configuration
+CONFIG_DIR="$PNA_DIR/config"
+
+MONITOR_FILE="${CONFIG_DIR}/monitor"
+NETWORKS_FILE="${CONFIG_DIR}/networks"
+
+if [ -e $MONITOR_FILE ] ; then
+    source $MONITOR_FILE
+else
+    echo "Missing monitoring configuration file ($MONITOR_FILE)" >&2
+    exit 1
+fi
+
+PNA_PROGRAM="${PNA_DIR}/module/pna"      # Name of pna program
+
+# Program Locations
+IFCONFIG="/sbin/ifconfig"
+
+start () {
+    PARMS=$1
+
+    echo "Starting $SERVICE: "
+
+    if [ ! -z "$PARMS" ] ; then
+        echo "...with $PARMS"
+    fi
+
+    # make sure we have some place to save log files
+    mkdir -p "$PNA_LOGDIR"
+
+    # Make sure PNA interface(s) are up
+    PID_LIST=""
+    RETVAL=0
+    for iface in ${PNA_IFACE//,/ } ; do
+        ${IFCONFIG} ${iface} up
+        ${IFCONFIG} ${iface} promisc
+        ARGS="-v -n $NETWORKS_FILE -i $iface"
+        nohup ${PNA_PROGRAM} ${ARGS} &
+        pid=$!
+        RETVAL=$(($RETVAL + $?))
+        PID_LIST="$PID_LIST $pid"
+        # set affinity if requested
+        if [ $PNA_MONPROCS ] ; then
+            affinity=${PNA_MONPROCS[$i%${#PNA_MONPROCS[@]}]}
+            i=$(($i+1))
+            /bin/taskset -cp $affinity $PID > /dev/null 2>&1
+            affinity=$(/bin/taskset -p $PID |    awk '{print $6}')
+            echo -e "\tuser_monitor ($PID) affinity $affinity"
+        fi
+    done
+
+    # finish up with script-y stuff
+    [ $RETVAL = 0 ] && echo $PID_LIST > /var/run/${SERVICE}.pids
+    [ $RETVAL = 0 ] && echo "$SERVICE started" || echo "Failed to start $SERVICE"
+
+    return $RETVAL
+}
+
+stop () {
+    echo $"Stopping $SERVICE: "
+
+    # kill all the monitors and alerts
+    kill -SIGINT $(cat /var/run/${SERVICE}.pids)
+
+    # unload the module
+    for iface in ${PNA_IFACE//,/ } ; do
+        # Take down PNA interface
+        ${IFCONFIG} ${iface} down
+    done
+
+    # End with script-y stuff
+    rm -f /var/run/${SERVICE}.pids
+    echo "$SERVICE stopped" || echo "Failed to stop $SERVICE"
+
+    # allow irqbalance to change interrupts
+    #service irqbalance start
+    echo "You may consider running \`service irqbalance start\` if needed"
+
+    return $RETVAL
+}
+
+case $1 in
+    start)
+        start $2
+    ;;
+    stop)
+        stop
+    ;;
+    restart)
+        stop
+        start $2
+    ;;
+    status)
+        echo "Unknown status"
+        RETVAL=$?
+    ;;
+    *)
+        echo $"Usage: $SERVICE {start|stop|restart|status}"
+        exit 3
+esac
+
+exit $RETVAL

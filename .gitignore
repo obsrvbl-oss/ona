@@ -1,0 +1,24 @@
+### vim ###
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+*~
+
+### Python ###
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.installed.cfg
+*.egg
+
+index.html
+.coverage
+
+packaging/output/
+packaging/root/opt/obsrvbl-ona/netflow/
+packaging/root/opt/obsrvbl-ona/ona_service/
+packaging/root/opt/obsrvbl-ona/pna/
+packaging/root/opt/obsrvbl-ona/version

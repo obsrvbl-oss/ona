@@ -1,0 +1,8 @@
+
+# obsrvbl-ona service configuration
+Defaults:obsrvbl_ona !requiretty
+Defaults:obsrvbl_ona !syslog
+obsrvbl_ona ALL=(ALL) NOPASSWD: /sbin/ifconfig
+obsrvbl_ona ALL=(ALL) NOPASSWD: /opt/obsrvbl-ona/pna/user/pna
+obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/sbin/tcpdump
+obsrvbl_ona ALL=(suricata) NOPASSWD: /opt/suricata/manage.sh

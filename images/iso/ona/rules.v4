@@ -1,0 +1,8 @@
+*filter
+:INPUT DROP [5:360]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [203:33609]
+-A INPUT -p tcp -m tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
+-A INPUT -m state --state ESTABLISHED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+COMMIT

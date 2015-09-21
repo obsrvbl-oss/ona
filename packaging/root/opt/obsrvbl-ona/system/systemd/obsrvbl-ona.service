@@ -1,0 +1,15 @@
+[Unit]
+Description=ONA Supervisor Service
+
+[Service]
+User=obsrvbl_ona
+Group=obsrvbl_ona
+Environment="PYTHONPATH=/opt/obsrvbl-ona/ona_service/vendor"
+ExecStart=/opt/obsrvbl-ona/system/supervisord/ona-supervisord.sh
+ExecReload=/bin/sh -c "/bin/kill -HUP $(cat /tmp/ona-supervisord.pid)"
+ExecStop=/bin/sh -c "/bin/kill -TERM $(cat /tmp/ona-supervisord.pid)"
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

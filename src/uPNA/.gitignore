@@ -1,0 +1,13 @@
+.svn
+
+*.py[co]
+
+*.o
+.tmp_versions/
+module/pna
+
+logs/*
+*.log
+irq_count.*
+
+config/monitor

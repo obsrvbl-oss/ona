@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+# Upstart services
+rm -f /etc/init/obsrvbl-ona.conf
+
+# systemd services
+rm -f /lib/systemd/system/obsrvbl-ona.service
+
+# https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html
+if [ "$1" = "purge" ] ; then
+    echo "Purging ona-service"
+    rm -rf /opt/obsrvbl-ona/
+fi
