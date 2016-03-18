@@ -2,7 +2,24 @@
 :INPUT DROP [5:360]
 :FORWARD DROP [0:0]
 :OUTPUT ACCEPT [203:33609]
--A INPUT -p tcp -m tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
+
+# Inbound SSH
+-A INPUT -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
+-A OUTPUT -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+
+# Inbound NetFlow
+-A INPUT -p udp --dport 9995 -m state --state NEW,ESTABLISHED -j ACCEPT
+
+# Outbound ping
+-A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
+-A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
+
+# Inbound ping
+-A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+-A OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT
+
+# Defaults
 -A INPUT -m state --state ESTABLISHED -j ACCEPT
 -A INPUT -i lo -j ACCEPT
+
 COMMIT

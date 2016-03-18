@@ -14,7 +14,7 @@
 all: test
 
 requirements:
-	pip install flake8 coverage nose mock==1.3.0
+	pip install flake8 coverage nose mock
 
 flake8:
 	flake8 --max-complexity 10 --exclude=ona_service/vendor/ .
@@ -23,7 +23,8 @@ test: requirements flake8
 	python -m nose --verbose --where=tests/ ${tests}
 
 coverage: requirements flake8
-	python -m nose -verbose --where=tests/ --with-coverage
+	coverage run -m nose --verbose --where="tests/"
+	coverage report
 
 clean:
 	find . -name '*.py[co]' -delete

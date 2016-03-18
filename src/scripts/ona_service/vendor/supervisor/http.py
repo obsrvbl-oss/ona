@@ -5,6 +5,7 @@ import sys
 import socket
 import errno
 import urllib
+import traceback
 
 try:
     import pwd
@@ -663,7 +664,7 @@ class tail_f_producer:
         self._follow()
         try:
             newsz = self._fsize()
-        except OSError:
+        except (OSError, ValueError):
             # file descriptor was closed
             return ''
         bytes_added = newsz - self.sz
@@ -688,7 +689,8 @@ class tail_f_producer:
     def _follow(self):
         try:
             ino = os.stat(self.filename)[stat.ST_INO]
-        except OSError:
+        except (OSError, ValueError):
+            # file was unlinked
             return
 
         if self.ino != ino: # log rotation occurred
@@ -796,12 +798,7 @@ class mainlogtail_handler:
 
 def make_http_servers(options, supervisord):
     servers = []
-    class LogWrapper:
-        def log(self, msg):
-            if msg.endswith('\n'):
-                msg = msg[:-1]
-            options.logger.trace(msg)
-    wrapper = LogWrapper()
+    wrapper = LogWrapper(options.logger)
 
     for config in options.server_configs:
         family = config['family']
@@ -828,7 +825,8 @@ def make_http_servers(options, supervisord):
             try:
                 inst = factory(supervisord, **d)
             except:
-                import traceback; traceback.print_exc()
+                tb = traceback.format_exc()
+                options.logger.warn(tb)
                 raise ValueError('Could not make %s rpc interface' % name)
             subinterfaces.append((name, inst))
             options.logger.info('RPC interface %r initialized' % name)
@@ -870,6 +868,23 @@ def make_http_servers(options, supervisord):
         servers.append((config, hs))
 
     return servers
+
+class LogWrapper:
+    '''Receives log messages from the Medusa servers and forwards
+    them to the Supervisor logger'''
+    def __init__(self, logger):
+        self.logger = logger
+
+    def log(self, msg):
+        '''Medusa servers call this method.  There is no log level so
+        we have to sniff the message.  We want "Server Error" messages
+        from medusa.http_server logged as errors at least.'''
+        if msg.endswith('\n'):
+            msg = msg[:-1]
+        if 'error' in msg.lower():
+            self.logger.error(msg)
+        else:
+            self.logger.trace(msg)
 
 class encrypted_dictionary_authorizer:
     def __init__ (self, dict):

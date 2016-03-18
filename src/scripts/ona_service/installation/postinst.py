@@ -24,21 +24,21 @@ def main(system_type):
     package installation. `system_type` is the name of one of the classes
     defined in the system_tools module.
     """
-    linux_system = getattr(system_tools, system_type)()
+    system = getattr(system_tools, system_type)()
 
     try:
-        linux_system.stop_service('obsrvbl-ona')
+        system.stop_service('obsrvbl-ona')
     except Exception:
         pass
 
-    linux_system.add_user()
-    linux_system.set_user_group()
-    linux_system.set_owner()
-    linux_system.set_sudoer()
-    linux_system.install_services()
+    system.add_user()
+    system.set_user_group()
+    system.set_owner()
+    system.set_sudoer()
+    system.install_services()
 
     try:
-        linux_system.start_service('obsrvbl-ona')
+        system.start_service('obsrvbl-ona')
     except Exception as e:
         print('Could not start obsrvbl-ona: {}'.format(e))
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     parser.add_argument(
         'system_type',
         metavar='system_type',
-        help='Name of Linux system class (e.g. UbuntuPrecise)'
+        help='Name of system class (e.g. UbuntuPrecise)'
     )
     args = parser.parse_args()
     main(args.system_type)

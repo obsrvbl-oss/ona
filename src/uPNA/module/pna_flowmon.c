@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <netinet/in.h>
 #include <netinet/ip.h>
 
 #include "pna.h"

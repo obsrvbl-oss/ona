@@ -6,7 +6,7 @@ Usage: %s [options]
 
 Options:
 -c/--configuration FILENAME -- configuration file
--n/--nodaemon -- run in the foreground (same as 'nodaemon true' in config file)
+-n/--nodaemon -- run in the foreground (same as 'nodaemon=true' in config file)
 -h/--help -- print this usage message and exit
 -v/--version -- print supervisord version number and exit
 -u/--user USER -- run supervisord as this user (or numeric uid)
@@ -205,7 +205,7 @@ class Supervisor:
 
                 if not self.shutdown_report():
                     # if there are no unstopped processes (we're done
-                    # killing everything), it's OK to swtop or reload
+                    # killing everything), it's OK to shutdown or reload
                     raise asyncore.ExitNow
 
             r, w, x = [], [], []
@@ -230,7 +230,7 @@ class Supervisor:
                     try:
                         dispatcher = combined_map[fd]
                         self.options.logger.blather(
-                            'read event caused by %(dispatcher)s',
+                            'read event caused by %(dispatcher)r',
                             dispatcher=dispatcher)
                         dispatcher.handle_read_event()
                     except asyncore.ExitNow:
@@ -243,7 +243,7 @@ class Supervisor:
                     try:
                         dispatcher = combined_map[fd]
                         self.options.logger.blather(
-                            'write event caused by %(dispatcher)s',
+                            'write event caused by %(dispatcher)r',
                             dispatcher=dispatcher)
                         dispatcher.handle_write_event()
                     except asyncore.ExitNow:
@@ -251,7 +251,8 @@ class Supervisor:
                     except:
                         combined_map[fd].handle_error()
 
-            [ group.transition() for group  in pgroups ]
+            for group in pgroups:
+                group.transition()
 
             self.reap()
             self.handle_signal()
@@ -364,11 +365,11 @@ def main(args=None, test=False):
             profile('go(options)', globals(), locals(), sort_order, callers)
         else:
             go(options)
-        if test or (options.mood < SupervisorStates.RESTARTING):
-            break
         options.close_httpservers()
         options.close_logger()
         first = False
+        if test or (options.mood < SupervisorStates.RESTARTING):
+            break
 
 def go(options):
     d = Supervisor(options)

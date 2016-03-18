@@ -3,7 +3,6 @@ import sys
 import time
 import errno
 import shlex
-import StringIO
 import traceback
 import signal
 
@@ -39,10 +38,11 @@ class Subprocess:
     event = None # event currently being processed (if we're an event listener)
     laststart = 0 # Last time the subprocess was started; 0 if never
     laststop = 0  # Last time the subprocess was stopped; 0 if never
+    laststopreport = 0 # Last time "waiting for x to stop" logged, to throttle
     delay = 0 # If nonzero, delay starting or killing until this time
-    administrative_stop = 0 # true if the process has been stopped by an admin
-    system_stop = 0 # true if the process has been stopped by the system
-    killing = 0 # flag determining whether we are trying to kill this proc
+    administrative_stop = False # true if process has been stopped by an admin
+    system_stop = False # true if process has been stopped by the system
+    killing = False # true if are trying to kill this process
     backoff = 0 # backoff counter (to startretries)
     dispatchers = None # asnycore output dispatchers (keyed by fd)
     pipes = None # map of channel name to file descriptor #
@@ -194,11 +194,11 @@ class Subprocess:
             options.logger.warn(msg)
             return
 
-        self.killing = 0
+        self.killing = False
         self.spawnerr = None
         self.exitstatus = None
-        self.system_stop = 0
-        self.administrative_stop = 0
+        self.system_stop = False
+        self.administrative_stop = False
 
         self.laststart = time.time()
 
@@ -217,13 +217,14 @@ class Subprocess:
 
         try:
             self.dispatchers, self.pipes = self.config.make_dispatchers(self)
-        except OSError, why:
+        except (OSError, IOError), why:
             code = why.args[0]
             if code == errno.EMFILE:
                 # too many file descriptors open
                 msg = 'too many open files to spawn %r' % self.config.name
             else:
-                msg = 'unknown error: %s' % errno.errorcode.get(code, code)
+                msg = 'unknown error making dispatchers for %r: %s' % (
+                      self.config.name, errno.errorcode.get(code, code))
             self.record_spawnerr(msg)
             self._assertInState(ProcessStates.STARTING)
             self.change_state(ProcessStates.BACKOFF)
@@ -238,8 +239,8 @@ class Subprocess:
                 msg  = ('Too many processes in process table to spawn %r' %
                         self.config.name)
             else:
-                msg = 'unknown error: %s' % errno.errorcode.get(code, code)
-
+                msg = 'unknown error during fork for %r: %s' % (
+                      self.config.name, errno.errorcode.get(code, code))
             self.record_spawnerr(msg)
             self._assertInState(ProcessStates.STARTING)
             self.change_state(ProcessStates.BACKOFF)
@@ -348,13 +349,23 @@ class Subprocess:
 
     def stop(self):
         """ Administrative stop """
-        self.administrative_stop = 1
+        self.administrative_stop = True
+        self.laststopreport = 0
         return self.kill(self.config.stopsignal)
+
+    def stop_report(self):
+        """ Log a 'waiting for x to stop' message with throttling. """
+        if self.state == ProcessStates.STOPPING:
+            now = time.time()
+            if now > (self.laststopreport + 2): # every 2 seconds
+                self.config.options.logger.info(
+                    'waiting for %s to stop' % self.config.name)
+                self.laststopreport = now
 
     def give_up(self):
         self.delay = 0
         self.backoff = 0
-        self.system_stop = 1
+        self.system_stop = True
         self._assertInState(ProcessStates.BACKOFF)
         self.change_state(ProcessStates.FATAL)
 
@@ -400,7 +411,7 @@ class Subprocess:
                              )
 
         # RUNNING/STARTING/STOPPING -> STOPPING
-        self.killing = 1
+        self.killing = True
         self.delay = now + self.config.stopwaitsecs
         # we will already be in the STOPPING state if we're doing a
         # SIGKILL as a result of overrunning stopwaitsecs
@@ -416,16 +427,49 @@ class Subprocess:
         try:
             options.kill(pid, sig)
         except:
-            io = StringIO.StringIO()
-            traceback.print_exc(file=io)
-            tb = io.getvalue()
+            tb = traceback.format_exc()
             msg = 'unknown problem killing %s (%s):%s' % (self.config.name,
                                                           self.pid, tb)
             options.logger.critical(msg)
             self.change_state(ProcessStates.UNKNOWN)
             self.pid = 0
-            self.killing = 0
+            self.killing = False
             self.delay = 0
+            return msg
+
+        return None
+
+    def signal(self, sig):
+        """Send a signal to the subprocess, without intending to kill it.
+
+        Return None if the signal was sent, or an error message string
+        if an error occurred or if the subprocess is not running.
+        """
+        options = self.config.options
+        if not self.pid:
+            msg = ("attempted to send %s sig %s but it wasn't running" %
+                   (self.config.name, signame(sig)))
+            options.logger.debug(msg)
+            return msg
+
+        options.logger.debug('sending %s (pid %s) sig %s'
+                             % (self.config.name,
+                                self.pid,
+                                signame(sig))
+                             )
+
+        self._assertInState(ProcessStates.RUNNING,ProcessStates.STARTING,
+                            ProcessStates.STOPPING)
+
+        try:
+            options.kill(self.pid, sig)
+        except:
+            tb = traceback.format_exc()
+            msg = 'unknown problem sending sig %s (%s):%s' % (
+                                self.config.name, self.pid, tb)
+            options.logger.critical(msg)
+            self.change_state(ProcessStates.UNKNOWN)
+            self.pid = 0
             return msg
 
         return None
@@ -441,13 +485,21 @@ class Subprocess:
         self.laststop = now
         processname = self.config.name
 
-        tooquickly = now - self.laststart < self.config.startsecs
+        if now > self.laststart:
+            too_quickly = now - self.laststart < self.config.startsecs
+        else:
+            too_quickly = False
+            self.config.options.logger.warn(
+                "process %r (%s) laststart time is in the future, don't "
+                "know how long process was running so assuming it did "
+                "not exit too quickly" % (self.config.name, self.pid))
+
         exit_expected = es in self.config.exitcodes
 
         if self.killing:
             # likely the result of a stop request
             # implies STOPPING -> STOPPED
-            self.killing = 0
+            self.killing = False
             self.delay = 0
             self.exitstatus = es
 
@@ -455,7 +507,7 @@ class Subprocess:
             self._assertInState(ProcessStates.STOPPING)
             self.change_state(ProcessStates.STOPPED)
 
-        elif tooquickly:
+        elif too_quickly:
             # the program did not stay up long enough to make it to RUNNING
             # implies STARTING -> BACKOFF
             self.exitstatus = None
@@ -466,18 +518,16 @@ class Subprocess:
 
         else:
             # this finish was not the result of a stop request, the
-            # program was in the RUNNING state but exited implies
-            # RUNNING -> EXITED
+            # program was in the RUNNING state but exited
+            # implies RUNNING -> EXITED normally but see next comment
             self.delay = 0
             self.backoff = 0
             self.exitstatus = es
 
-            if self.state == ProcessStates.STARTING: # pragma: no cover
-                # XXX I don't know under which circumstances this
-                # happens, but in the wild, there is a transition that
-                # subverts the RUNNING state (directly from STARTING
-                # to EXITED), so we perform the correct transition
-                # here.
+            # if the process was STARTING but a system time change causes
+            # self.laststart to be in the future, the normal STARTING->RUNNING
+            # transition can be subverted so we perform the transition here.
+            if self.state == ProcessStates.STARTING:
                 self.change_state(ProcessStates.RUNNING)
 
             self._assertInState(ProcessStates.RUNNING)

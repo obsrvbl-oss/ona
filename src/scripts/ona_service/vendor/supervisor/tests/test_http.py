@@ -17,6 +17,7 @@ from supervisor.tests.base import DummyRPCInterfaceFactory
 from supervisor.tests.base import DummyPConfig
 from supervisor.tests.base import DummyOptions
 from supervisor.tests.base import DummyRequest
+from supervisor.tests.base import DummyLogger
 
 from supervisor.http import NOT_DONE_YET
 
@@ -25,12 +26,12 @@ class HandlerTests:
         return self._getTargetClass()(supervisord)
 
     def test_match(self):
-        class DummyRequest:
+        class FakeRequest:
             def __init__(self, uri):
                 self.uri = uri
         supervisor = DummySupervisor()
         handler = self._makeOne(supervisor)
-        self.assertEqual(handler.match(DummyRequest(handler.path)), True)
+        self.assertEqual(handler.match(FakeRequest(handler.path)), True)
 
 class LogtailHandlerTests(HandlerTests, unittest.TestCase):
     def _getTargetClass(self):
@@ -138,7 +139,17 @@ class TailFProducerTests(unittest.TestCase):
         result = producer.more()
         self.assertEqual(result, '==> File truncated <==\n')
 
-    def test_handle_more_follow(self):
+    def test_handle_more_fd_closed(self):
+        request = DummyRequest('/logtail/foo', None, None, None)
+        f = tempfile.NamedTemporaryFile()
+        f.write('a' * 80)
+        f.flush()
+        producer = self._makeOne(request, f.name, 80)
+        producer.file.close()
+        result = producer.more()
+        self.assertEqual(result, producer.more())
+
+    def test_handle_more_follow_file_recreated(self):
         request = DummyRequest('/logtail/foo', None, None, None)
         f = tempfile.NamedTemporaryFile()
         f.write('a' * 80)
@@ -155,6 +166,27 @@ class TailFProducerTests(unittest.TestCase):
         finally:
             os.unlink(f2.name)
         self.assertEqual(result, 'b' * 80)
+
+    def test_handle_more_follow_file_gone(self):
+        request = DummyRequest('/logtail/foo', None, None, None)
+        filename = tempfile.mktemp()
+        f = open(filename, 'wb')
+        f.write('a' * 80)
+        f.close()
+        try:
+            producer = self._makeOne(request, f.name, 80)
+        finally:
+            os.unlink(f.name)
+        result = producer.more()
+        self.assertEqual(result, 'a' * 80)
+        f = open(filename, 'wb')
+        f.write('b' * 80)
+        f.close()
+        try:
+            result = producer.more() # should open in new file
+            self.assertEqual(result, 'b' * 80)
+        finally:
+             os.unlink(f.name)
 
 class DeferringChunkedProducerTests(unittest.TestCase):
     def _getTargetClass(self):
@@ -340,6 +372,39 @@ class SupervisorAuthHandlerTests(unittest.TestCase):
         auth_handler.handle_request(request)
         self.assertFalse(handler.handled_request)
 
+class LogWrapperTests(unittest.TestCase):
+    def _getTargetClass(self):
+        from supervisor.http import LogWrapper
+        return LogWrapper
+
+    def _makeOne(self, logger):
+        return self._getTargetClass()(logger)
+
+    def test_strips_trailing_newlines_from_msgs(self):
+        logger = DummyLogger()
+        log_wrapper = self._makeOne(logger)
+        log_wrapper.log("foo\n")
+        logdata = logger.data
+        self.assertEqual(len(logdata), 1)
+        self.assertEqual(logdata[0], "foo")
+
+    def test_logs_msgs_with_error_at_error_level(self):
+        logger = DummyLogger()
+        log_wrapper = self._makeOne(logger)
+        errors = []
+        logger.error = errors.append
+        log_wrapper.log("Server Error")
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0], "Server Error")
+
+    def test_logs_other_messages_at_trace_level(self):
+        logger = DummyLogger()
+        log_wrapper = self._makeOne(logger)
+        traces = []
+        logger.trace = traces.append
+        log_wrapper.log("GET /")
+        self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0], "GET /")
 
 class TopLevelFunctionTests(unittest.TestCase):
     def _make_http_servers(self, sconfigs):
@@ -359,6 +424,16 @@ class TopLevelFunctionTests(unittest.TestCase):
             from asyncore import socket_map
             socket_map.clear()
         return servers
+
+    def test_make_http_servers_socket_type_error(self):
+        config = {'family':999, 'host':'localhost', 'port':17735,
+                  'username':None, 'password':None,
+                  'section':'inet_http_server'}
+        try:
+            servers = self._make_http_servers([config])
+            self.fail('nothing raised')
+        except ValueError, exc:
+            self.assertEqual(exc.args[0], 'Cannot determine socket type 999')
 
     def test_make_http_servers_noauth(self):
         socketfile = tempfile.mktemp()

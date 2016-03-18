@@ -36,7 +36,8 @@ class SubprocessTests(unittest.TestCase):
         from supervisor.states import ProcessStates
         from supervisor.process import getProcessStateDescription
         for statename, code in ProcessStates.__dict__.items():
-            self.assertEqual(getProcessStateDescription(code), statename)
+            if isinstance(code, int):
+                self.assertEqual(getProcessStateDescription(code), statename)
 
     def test_ctor(self):
         options = DummyOptions()
@@ -51,8 +52,8 @@ class SubprocessTests(unittest.TestCase):
         self.assertEqual(instance.laststart, 0)
         self.assertEqual(instance.laststop, 0)
         self.assertEqual(instance.delay, 0)
-        self.assertEqual(instance.administrative_stop, 0)
-        self.assertEqual(instance.killing, 0)
+        self.assertFalse(instance.administrative_stop)
+        self.assertFalse(instance.killing)
         self.assertEqual(instance.backoff, 0)
         self.assertEqual(instance.pipes, {})
         self.assertEqual(instance.dispatchers, {})
@@ -244,9 +245,36 @@ class SubprocessTests(unittest.TestCase):
         events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         result = instance.spawn()
         self.assertEqual(result, None)
-        self.assertEqual(instance.spawnerr, 'unknown error: EPERM')
-        self.assertEqual(options.logger.data[0],
-                         "spawnerr: unknown error: EPERM")
+        msg = "unknown error making dispatchers for 'good': EPERM"
+        self.assertEqual(instance.spawnerr, msg)
+        self.assertEqual(options.logger.data[0], "spawnerr: %s" % msg)
+        self.assertTrue(instance.delay)
+        self.assertTrue(instance.backoff)
+        from supervisor.states import ProcessStates
+        self.assertEqual(instance.state, ProcessStates.BACKOFF)
+        self.assertEqual(len(L), 2)
+        event1, event2 = L
+        self.assertEqual(event1.__class__, events.ProcessStateStartingEvent)
+        self.assertEqual(event2.__class__, events.ProcessStateBackoffEvent)
+
+    def test_spawn_fail_make_dispatchers_eisdir(self):
+        options = DummyOptions()
+        config = DummyPConfig(options, name='cat', command='/bin/cat',
+                              stdout_logfile='/a/directory') # not a file
+        def raise_eisdir(envelope):
+            raise IOError(errno.EISDIR)
+        config.make_dispatchers = raise_eisdir
+        instance = self._makeOne(config)
+        from supervisor.states import ProcessStates
+        instance.state = ProcessStates.BACKOFF
+        from supervisor import events
+        L = []
+        events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
+        result = instance.spawn()
+        self.assertEqual(result, None)
+        msg = "unknown error making dispatchers for 'cat': EISDIR"
+        self.assertEqual(instance.spawnerr, msg)
+        self.assertEqual(options.logger.data[0], "spawnerr: %s" % msg)
         self.assertTrue(instance.delay)
         self.assertTrue(instance.backoff)
         from supervisor.states import ProcessStates
@@ -268,10 +296,9 @@ class SubprocessTests(unittest.TestCase):
         events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         result = instance.spawn()
         self.assertEqual(result, None)
-        self.assertEqual(instance.spawnerr,
-                         "Too many processes in process table to spawn 'good'")
-        self.assertEqual(options.logger.data[0],
-             "spawnerr: Too many processes in process table to spawn 'good'")
+        msg = "Too many processes in process table to spawn 'good'"
+        self.assertEqual(instance.spawnerr, msg)
+        self.assertEqual(options.logger.data[0], "spawnerr: %s" % msg)
         self.assertEqual(len(options.parent_pipes_closed), 6)
         self.assertEqual(len(options.child_pipes_closed), 6)
         self.assertTrue(instance.delay)
@@ -295,9 +322,9 @@ class SubprocessTests(unittest.TestCase):
         events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         result = instance.spawn()
         self.assertEqual(result, None)
-        self.assertEqual(instance.spawnerr, 'unknown error: EPERM')
-        self.assertEqual(options.logger.data[0],
-                         "spawnerr: unknown error: EPERM")
+        msg = "unknown error during fork for 'good': EPERM"
+        self.assertEqual(instance.spawnerr, msg)
+        self.assertEqual(options.logger.data[0], "spawnerr: %s" % msg)
         self.assertEqual(len(options.parent_pipes_closed), 6)
         self.assertEqual(len(options.child_pipes_closed), 6)
         self.assertTrue(instance.delay)
@@ -653,12 +680,14 @@ class SubprocessTests(unittest.TestCase):
         instance.dispatchers = {'foo':dispatcher}
         from supervisor.states import ProcessStates
         instance.state = ProcessStates.RUNNING
+        instance.laststopreport = time.time()
         instance.stop()
-        self.assertEqual(instance.administrative_stop, 1)
+        self.assertTrue(instance.administrative_stop)
+        self.assertEqual(instance.laststopreport, 0)
         self.assertTrue(instance.delay)
         self.assertEqual(options.logger.data[0], 'killing test (pid 11) with '
                          'signal SIGTERM')
-        self.assertEqual(instance.killing, 1)
+        self.assertTrue(instance.killing)
         self.assertEqual(options.kills[11], signal.SIGTERM)
 
     def test_stop_not_in_stoppable_state_error(self):
@@ -677,6 +706,35 @@ class SubprocessTests(unittest.TestCase):
             self.assertEqual(exc.args[0], 'Assertion failed for test: '
                 'STOPPED not in RUNNING STARTING STOPPING')
 
+    def test_stop_report_logs_nothing_if_not_stopping_state(self):
+        options = DummyOptions()
+        config = DummyPConfig(options, 'test', '/test')
+        instance = self._makeOne(config)
+        instance.pid = 11
+        dispatcher = DummyDispatcher(writable=True)
+        instance.dispatchers = {'foo':dispatcher}
+        from supervisor.states import ProcessStates
+        instance.state = ProcessStates.STOPPED
+        instance.stop_report()
+        self.assertEqual(len(options.logger.data), 0)
+
+    def test_stop_report_logs_throttled_by_laststopreport(self):
+        options = DummyOptions()
+        config = DummyPConfig(options, 'test', '/test')
+        instance = self._makeOne(config)
+        instance.pid = 11
+        dispatcher = DummyDispatcher(writable=True)
+        instance.dispatchers = {'foo':dispatcher}
+        from supervisor.states import ProcessStates
+        instance.state = ProcessStates.STOPPING
+        self.assertEqual(instance.laststopreport, 0)
+        instance.stop_report()
+        self.assertEqual(len(options.logger.data), 1)
+        self.assertEqual(options.logger.data[0], 'waiting for test to stop')
+        self.assertNotEqual(instance.laststopreport, 0)
+        instance.stop_report()
+        self.assertEqual(len(options.logger.data), 1) # throttled
+
     def test_give_up(self):
         options = DummyOptions()
         config = DummyPConfig(options, 'test', '/test')
@@ -687,7 +745,7 @@ class SubprocessTests(unittest.TestCase):
         events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         instance.state = ProcessStates.BACKOFF
         instance.give_up()
-        self.assertEqual(instance.system_stop, 1)
+        self.assertTrue(instance.system_stop)
         self.assertFalse(instance.delay)
         self.assertFalse(instance.backoff)
         self.assertEqual(instance.state, ProcessStates.FATAL)
@@ -702,7 +760,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGTERM)
         self.assertEqual(options.logger.data[0],
               'attempted to kill test with sig SIGTERM but it wasn\'t running')
-        self.assertEqual(instance.killing, 0)
+        self.assertFalse(instance.killing)
 
     def test_kill_error(self):
         options = DummyOptions()
@@ -721,7 +779,8 @@ class SubprocessTests(unittest.TestCase):
                          'signal SIGTERM')
         self.assertTrue(options.logger.data[1].startswith(
             'unknown problem killing test'))
-        self.assertEqual(instance.killing, 0)
+        self.assertTrue('Traceback' in options.logger.data[1])
+        self.assertFalse(instance.killing)
         self.assertEqual(len(L), 2)
         event1 = L[0]
         event2 = L[1]
@@ -741,7 +800,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGTERM)
         self.assertEqual(options.logger.data[0], 'killing test (pid 11) with '
                          'signal SIGTERM')
-        self.assertEqual(instance.killing, 1)
+        self.assertTrue(instance.killing)
         self.assertEqual(options.kills[11], signal.SIGTERM)
         self.assertEqual(len(L), 1)
         event = L[0]
@@ -760,7 +819,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGTERM)
         self.assertEqual(options.logger.data[0], 'killing test (pid 11) with '
                          'signal SIGTERM')
-        self.assertEqual(instance.killing, 1)
+        self.assertTrue(instance.killing)
         self.assertEqual(options.kills[11], signal.SIGTERM)
         self.assertEqual(len(L), 1)
         event = L[0]
@@ -779,7 +838,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGKILL)
         self.assertEqual(options.logger.data[0], 'killing test (pid 11) with '
                          'signal SIGKILL')
-        self.assertEqual(instance.killing, 1)
+        self.assertTrue(instance.killing)
         self.assertEqual(options.kills[11], signal.SIGKILL)
         self.assertEqual(L, []) # no event because we didn't change state
 
@@ -795,7 +854,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGKILL)
         self.assertEqual(options.logger.data[0],
                          'Attempted to kill test, which is in BACKOFF state.')
-        self.assertEqual(instance.killing, 0)
+        self.assertFalse(instance.killing)
         event = L[0]
         self.assertEqual(event.__class__, events.ProcessStateStoppedEvent)
 
@@ -812,7 +871,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGKILL)
         self.assertEqual(options.logger.data[0], 'killing test (pid 11) '
                          'process group with signal SIGKILL')
-        self.assertEqual(instance.killing, 1)
+        self.assertTrue(instance.killing)
         self.assertEqual(options.kills[-11], signal.SIGKILL)
         self.assertEqual(L, []) # no event because we didn't change state
 
@@ -829,7 +888,7 @@ class SubprocessTests(unittest.TestCase):
         instance.kill(signal.SIGTERM)
         self.assertEqual(options.logger.data[0], 'killing test (pid 11) '
                          'process group with signal SIGTERM')
-        self.assertEqual(instance.killing, 1)
+        self.assertTrue(instance.killing)
         self.assertEqual(options.kills[-11], signal.SIGTERM)
         self.assertEqual(len(L), 1)
         event = L[0]
@@ -837,24 +896,98 @@ class SubprocessTests(unittest.TestCase):
         self.assertEqual(event.extra_values, [('pid', 11)])
         self.assertEqual(event.from_state, ProcessStates.RUNNING)
 
-    def test_finish(self):
+    def test_signal(self):
+        options = DummyOptions()
+
+        killedpid = []
+        killedsig = []
+
+        def kill(pid, sig):
+            killedpid.append(pid)
+            killedsig.append(sig)
+
+        options.kill = kill
+
+        config = DummyPConfig(options, 'test', '/test')
+        instance = self._makeOne(config)
+        instance.pid = 11
+
+        from supervisor.states import ProcessStates
+        instance.state = ProcessStates.RUNNING
+
+        instance.signal(signal.SIGWINCH )
+
+        self.assertEqual(killedpid, [instance.pid,])
+        self.assertEqual(killedsig, [signal.SIGWINCH,])
+
+        self.assertEqual(options.logger.data[0], 'sending test (pid 11) sig SIGWINCH')
+
+    def test_signal_stopped(self):
+        options = DummyOptions()
+
+        killedpid = []
+        killedsig = []
+
+        def kill(pid, sig):
+            killedpid.append(pid)
+            killedsig.append(sig)
+
+        options.kill = kill #don't actually start killing random processes...
+
+        config = DummyPConfig(options, 'test', '/test')
+        instance = self._makeOne(config)
+        instance.pid = None
+
+        from supervisor.states import ProcessStates
+        instance.state = ProcessStates.STOPPED
+
+        instance.signal(signal.SIGWINCH )
+
+        self.assertEqual(options.logger.data[0], "attempted to send test sig SIGWINCH "
+                                                    "but it wasn't running")
+
+        self.assertEqual(killedpid, [])
+
+    def test_signal_error(self):
+        options = DummyOptions()
+        config = DummyPConfig(options, 'test', '/test')
+        options.kill_error = 1
+        instance = self._makeOne(config)
+        L = []
+        from supervisor.states import ProcessStates
+        from supervisor import events
+        events.subscribe(events.ProcessStateEvent,
+                         lambda x: L.append(x))
+        instance.pid = 11
+        instance.state = ProcessStates.RUNNING
+        instance.signal(signal.SIGWINCH)
+        self.assertEqual(options.logger.data[0],
+            'sending test (pid 11) sig SIGWINCH')
+        self.assertTrue(options.logger.data[1].startswith(
+            'unknown problem sending sig test (11)'))
+        self.assertFalse(instance.killing)
+        self.assertEqual(len(L), 1)
+        event = L[0]
+        self.assertEqual(event.__class__, events.ProcessStateUnknownEvent)
+
+    def test_finish_stopping_state(self):
         options = DummyOptions()
         config = DummyPConfig(options, 'notthere', '/notthere',
                               stdout_logfile='/tmp/foo')
         instance = self._makeOne(config)
         instance.waitstatus = (123, 1) # pid, waitstatus
         instance.config.options.pidhistory[123] = instance
-        instance.killing = 1
+        instance.killing = True
         pipes = {'stdout':'','stderr':''}
         instance.pipes = pipes
         from supervisor.states import ProcessStates
         from supervisor import events
         instance.state = ProcessStates.STOPPING
         L = []
-        events.subscribe(events.ProcessStateStoppedEvent, lambda x: L.append(x))
+        events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         instance.pid = 123
         instance.finish(123, 1)
-        self.assertEqual(instance.killing, 0)
+        self.assertFalse(instance.killing)
         self.assertEqual(instance.pid, 0)
         self.assertEqual(options.parent_pipes_closed, pipes)
         self.assertEqual(instance.pipes, {})
@@ -868,7 +1001,7 @@ class SubprocessTests(unittest.TestCase):
         self.assertEqual(event.extra_values, [('pid', 123)])
         self.assertEqual(event.from_state, ProcessStates.STOPPING)
 
-    def test_finish_expected(self):
+    def test_finish_running_state_exit_expected(self):
         options = DummyOptions()
         config = DummyPConfig(options, 'notthere', '/notthere',
                               stdout_logfile='/tmp/foo')
@@ -881,10 +1014,10 @@ class SubprocessTests(unittest.TestCase):
         from supervisor import events
         instance.state = ProcessStates.RUNNING
         L = []
-        events.subscribe(events.ProcessStateExitedEvent, lambda x: L.append(x))
+        events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         instance.pid = 123
         instance.finish(123, 1)
-        self.assertEqual(instance.killing, 0)
+        self.assertFalse(instance.killing)
         self.assertEqual(instance.pid, 0)
         self.assertEqual(options.parent_pipes_closed, pipes)
         self.assertEqual(instance.pipes, {})
@@ -900,7 +1033,48 @@ class SubprocessTests(unittest.TestCase):
         self.assertEqual(event.extra_values, [('expected', True), ('pid', 123)])
         self.assertEqual(event.from_state, ProcessStates.RUNNING)
 
-    def test_finish_tooquickly(self):
+    def test_finish_starting_state_laststart_in_future(self):
+        options = DummyOptions()
+        config = DummyPConfig(options, 'notthere', '/notthere',
+                              stdout_logfile='/tmp/foo')
+        instance = self._makeOne(config)
+        instance.config.options.pidhistory[123] = instance
+        pipes = {'stdout':'','stderr':''}
+        instance.pipes = pipes
+        instance.config.exitcodes =[-1]
+        instance.laststart = time.time() + 3600 # 1 hour into the future
+        from supervisor.states import ProcessStates
+        from supervisor import events
+        instance.state = ProcessStates.STARTING
+        L = []
+        events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
+        instance.pid = 123
+        instance.finish(123, 1)
+        self.assertFalse(instance.killing)
+        self.assertEqual(instance.pid, 0)
+        self.assertEqual(options.parent_pipes_closed, pipes)
+        self.assertEqual(instance.pipes, {})
+        self.assertEqual(instance.dispatchers, {})
+        self.assertEqual(options.logger.data[0],
+                         "process 'notthere' (123) laststart time is in the "
+                         "future, don't know how long process was running so "
+                         "assuming it did not exit too quickly")
+        self.assertEqual(options.logger.data[1],
+                         'exited: notthere (terminated by SIGHUP; expected)')
+        self.assertEqual(instance.exitstatus, -1)
+        self.assertEqual(len(L), 2)
+        event = L[0]
+        self.assertEqual(event.__class__, events.ProcessStateRunningEvent)
+        self.assertEqual(event.expected, True)
+        self.assertEqual(event.extra_values, [('pid', 123)])
+        self.assertEqual(event.from_state, ProcessStates.STARTING)
+        event = L[1]
+        self.assertEqual(event.__class__, events.ProcessStateExitedEvent)
+        self.assertEqual(event.expected, True)
+        self.assertEqual(event.extra_values, [('expected', True), ('pid', 123)])
+        self.assertEqual(event.from_state, ProcessStates.RUNNING)
+
+    def test_finish_starting_state_exited_too_quickly(self):
         options = DummyOptions()
         config = DummyPConfig(options, 'notthere', '/notthere',
                               stdout_logfile='/tmp/foo', startsecs=10)
@@ -909,7 +1083,6 @@ class SubprocessTests(unittest.TestCase):
         pipes = {'stdout':'','stderr':''}
         instance.pipes = pipes
         instance.config.exitcodes =[-1]
-        import time
         instance.laststart = time.time()
         from supervisor.states import ProcessStates
         from supervisor import events
@@ -918,7 +1091,7 @@ class SubprocessTests(unittest.TestCase):
         events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
         instance.pid = 123
         instance.finish(123, 1)
-        self.assertEqual(instance.killing, 0)
+        self.assertFalse(instance.killing)
         self.assertEqual(instance.pid, 0)
         self.assertEqual(options.parent_pipes_closed, pipes)
         self.assertEqual(instance.pipes, {})
@@ -930,6 +1103,43 @@ class SubprocessTests(unittest.TestCase):
         event = L[0]
         self.assertEqual(event.__class__, events.ProcessStateBackoffEvent)
         self.assertEqual(event.from_state, ProcessStates.STARTING)
+
+    def test_finish_running_state_laststart_in_future(self):
+        options = DummyOptions()
+        config = DummyPConfig(options, 'notthere', '/notthere',
+                              stdout_logfile='/tmp/foo')
+        instance = self._makeOne(config)
+        instance.config.options.pidhistory[123] = instance
+        pipes = {'stdout':'','stderr':''}
+        instance.pipes = pipes
+        instance.config.exitcodes =[-1]
+        instance.laststart = time.time() + 3600 # 1 hour into the future
+        from supervisor.states import ProcessStates
+        from supervisor import events
+        instance.state = ProcessStates.RUNNING
+        L = []
+        events.subscribe(events.ProcessStateEvent, lambda x: L.append(x))
+        instance.pid = 123
+        instance.finish(123, 1)
+        self.assertFalse(instance.killing)
+        self.assertEqual(instance.pid, 0)
+        self.assertEqual(options.parent_pipes_closed, pipes)
+        self.assertEqual(instance.pipes, {})
+        self.assertEqual(instance.dispatchers, {})
+        self.assertEqual(options.logger.data[0],
+                         "process 'notthere' (123) laststart time is in the "
+                         "future, don't know how long process was running so "
+                         "assuming it did not exit too quickly")
+        self.assertEqual(options.logger.data[1],
+                         'exited: notthere (terminated by SIGHUP; expected)')
+        self.assertEqual(instance.exitstatus, -1)
+        self.assertEqual(len(L), 1)
+        event = L[0]
+        self.assertEqual(event.__class__,
+                         events.ProcessStateExitedEvent)
+        self.assertEqual(event.expected, True)
+        self.assertEqual(event.extra_values, [('expected', True), ('pid', 123)])
+        self.assertEqual(event.from_state, ProcessStates.RUNNING)
 
     def test_finish_with_current_event_sends_rejected(self):
         from supervisor import events
@@ -1040,11 +1250,11 @@ class SubprocessTests(unittest.TestCase):
         pconfig.autorestart = RestartUnconditionally
         process = self._makeOne(pconfig)
         process.laststart = 1
-        process.system_stop = 1
+        process.system_stop = True
         process.state = ProcessStates.EXITED
         process.transition()
         self.assertEqual(process.state, ProcessStates.EXITED)
-        self.assertEqual(process.system_stop, 1)
+        self.assertTrue(process.system_stop)
         self.assertEqual(L, [])
 
     def test_transition_exited_to_starting_uncond_supervisor_running(self):
@@ -1172,7 +1382,7 @@ class SubprocessTests(unittest.TestCase):
         process = self._makeOne(pconfig)
         process.backoff = 1
         process.delay = 1
-        process.system_stop = 0
+        process.system_stop = False
         process.laststart = 1
         process.pid = 1
         process.stdout_buffer = 'abc'
@@ -1183,7 +1393,7 @@ class SubprocessTests(unittest.TestCase):
         # this implies RUNNING
         self.assertEqual(process.backoff, 0)
         self.assertEqual(process.delay, 0)
-        self.assertEqual(process.system_stop, 0)
+        self.assertFalse(process.system_stop)
         self.assertEqual(options.logger.data[0],
                          'success: process entered RUNNING state, process has '
                          'stayed up for > than 10 seconds (startsecs)')
@@ -1204,7 +1414,7 @@ class SubprocessTests(unittest.TestCase):
         process.laststart = 1
         process.backoff = 10000
         process.delay = 1
-        process.system_stop = 0
+        process.system_stop = False
         process.stdout_buffer = 'abc'
         process.stderr_buffer = 'def'
         process.state = ProcessStates.BACKOFF
@@ -1214,7 +1424,7 @@ class SubprocessTests(unittest.TestCase):
         # this implies FATAL
         self.assertEqual(process.backoff, 0)
         self.assertEqual(process.delay, 0)
-        self.assertEqual(process.system_stop, 1)
+        self.assertTrue(process.system_stop)
         self.assertEqual(options.logger.data[0],
                          'gave up: process entered FATAL state, too many start'
                          ' retries too quickly')
@@ -1249,11 +1459,11 @@ class SubprocessTests(unittest.TestCase):
         process = self._makeOne(pconfig)
         process.delay = 0
         process.pid = 1
-        process.killing = 0
+        process.killing = False
         process.state = ProcessStates.STOPPING
 
         process.transition()
-        self.assertEqual(process.killing, 1)
+        self.assertTrue(process.killing)
         self.assertNotEqual(process.delay, 0)
         self.assertEqual(process.state, ProcessStates.STOPPING)
         self.assertEqual(options.logger.data[0],

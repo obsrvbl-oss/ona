@@ -58,8 +58,9 @@ class Service(object):
 
     def run(self):
         while not self.stop_event.is_set():
+            now = utcnow()
             try:
-                self.execute(now=utcnow())
+                self.execute(now=now)
             except requests_exceptions.RequestException as e:
                 # catch any exception from the requests library
                 logging.exception('persistent communication problem: %s', e)
@@ -69,6 +70,8 @@ class Service(object):
                 break
 
             # now sleep for the service's interval
-            sleep(self.poll_seconds)
+            time_taken = (utcnow() - now).total_seconds()
+            delay_sec = max(0, self.poll_seconds - time_taken)
+            sleep(delay_sec)
 
         logging.info('Service stopped')

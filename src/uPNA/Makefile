@@ -20,25 +20,6 @@ all: $(MODULE)
 $(MODULE):
 	$(MAKE) -C module/
 
-start: $(MODULE)
-	sudo $(SERVICE) start "$(PARMS)"
-
-stop:
-	sudo $(SERVICE) stop
-
-status:
-	sudo $(SERVICE) status
-
-indent:
-	find . -name '*.[ch]' | xargs uncrustify -c linux.cfg --no-backup --replace
-	find . -name '*~' -delete
-
 clean:
 	$(MAKE) -C module clean
-
-tag:
-	git tag $(shell cat VERSION)
-
-realclean: clean
-	rm -f irq_count.start irq_count.stop
-	rm -f verbose-*.log
+	rm -f util/intop/*.pyc

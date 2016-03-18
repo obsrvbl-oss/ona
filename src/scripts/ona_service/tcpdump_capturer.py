@@ -19,6 +19,7 @@ import logging
 from os import remove
 from os.path import join
 from subprocess import call, Popen
+from sys import platform
 
 # local
 from service import Service
@@ -36,6 +37,9 @@ class TcpdumpCapturer(Service):
         self.capture_seconds = kwargs.pop('capture_seconds')
         self.pcap_dir = kwargs.pop('pcap_dir')
         self.pps_limit = kwargs.pop('pps_limit')
+
+        if (self.capture_iface == 'any') and ('linux' not in platform):
+            self.capture_iface = None
 
         self.capture_process = None
         create_dirs(self.pcap_dir)
@@ -81,6 +85,11 @@ class TcpdumpCapturer(Service):
             '-Z', 'obsrvbl_ona',  # Drop privileges
             self.bpf_filter
         ]
+
+        # Use the default tcpdump interface if there was none specified
+        if self.capture_iface is None:
+            del tcpdump_args[4: 6]
+
         self.capture_process = Popen(tcpdump_args)
 
     def compress_pcaps(self):

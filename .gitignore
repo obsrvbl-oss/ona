@@ -1,6 +1,4 @@
 ### vim ###
-[._]*.s[a-w][a-z]
-[._]s[a-w][a-z]
 *.un~
 Session.vim
 .netrwhist
@@ -17,6 +15,7 @@ __pycache__/
 index.html
 .coverage
 
+images/iso/*.iso
 packaging/output/
 packaging/root/opt/obsrvbl-ona/netflow/
 packaging/root/opt/obsrvbl-ona/ona_service/

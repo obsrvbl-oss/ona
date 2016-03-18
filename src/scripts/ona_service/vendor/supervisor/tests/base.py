@@ -358,9 +358,9 @@ class DummyProcess:
     laststart = 0 # Last time the subprocess was started; 0 if never
     laststop = 0  # Last time the subprocess was stopped; 0 if never
     delay = 0 # If nonzero, delay starting or killing until this time
-    administrative_stop = 0 # true if the process has been stopped by an admin
-    system_stop = 0 # true if the process has been stopped by the system
-    killing = 0 # flag determining whether we are trying to kill this proc
+    administrative_stop = False # true if the process stopped by an admin
+    system_stop = False # true if the process has been stopped by the system
+    killing = False # flag determining whether we are trying to kill this proc
     backoff = 0 # backoff counter (to backofflimit)
     waitstatus = None
     exitstatus = None
@@ -375,11 +375,13 @@ class DummyProcess:
     stdin_buffer = '' # buffer of characters to send to child process' stdin
     listener_state = None
     group = None
+    sent_signal = None
 
     def __init__(self, config, state=None):
         self.config = config
         self.logsremoved = False
         self.stop_called = False
+        self.stop_report_called = True
         self.backoff_secs = None
         self.spawned = False
         if state is None:
@@ -422,8 +424,15 @@ class DummyProcess:
         from supervisor.process import ProcessStates
         self.state = ProcessStates.STOPPED
 
+    def stop_report(self):
+        self.stop_report_called = True
+
     def kill(self, signal):
         self.killed_with = signal
+
+    def signal(self, signal):
+        self.sent_signal = signal
+
 
     def spawn(self):
         self.spawned = True
@@ -596,7 +605,7 @@ class DummyMedusaChannel:
     def set_terminator(self, terminator):
         pass
 
-class DummyRequest:
+class DummyRequest(dict):
     command = 'GET'
     _error = None
     _done = False
@@ -859,6 +868,10 @@ class DummySupervisorRPCNamespace:
             raise Fault(xmlrpc.Faults.ALREADY_ADDED, '')
         if name == 'BAD_NAME':
             raise Fault(xmlrpc.Faults.BAD_NAME, '')
+        if name == 'FAILED':
+            raise Fault(xmlrpc.Faults.FAILED, '')
+        if name == 'SHUTDOWN_STATE':
+            raise Fault(xmlrpc.Faults.SHUTDOWN_STATE, '')
         if hasattr(self, 'processes'):
             self.processes.append(name)
         else:
@@ -871,6 +884,8 @@ class DummySupervisorRPCNamespace:
             raise Fault(xmlrpc.Faults.STILL_RUNNING, '')
         if name == 'BAD_NAME':
             raise Fault(xmlrpc.Faults.BAD_NAME, '')
+        if name == 'FAILED':
+            raise Fault(xmlrpc.Faults.FAILED, '')
         self.processes.remove(name)
 
     def clearProcessStdoutLog(self, name):
@@ -887,13 +902,16 @@ class DummySupervisorRPCNamespace:
     def clearAllProcessLogs(self):
         from supervisor import xmlrpc
         return [
-            {'name':'foo', 'group':'foo',
+            {'name':'foo',
+             'group':'foo',
              'status':xmlrpc.Faults.SUCCESS,
              'description': 'OK'},
-            {'name':'foo2', 'group':'foo2',
+            {'name':'foo2',
+             'group':'foo2',
              'status':xmlrpc.Faults.SUCCESS,
              'description': 'OK'},
-            {'name':'failed', 'group':'failed_group',
+            {'name':'failed',
+             'group':'failed_group',
              'status':xmlrpc.Faults.FAILED,
              'description':'FAILED'}
             ]
@@ -909,6 +927,55 @@ class DummySupervisorRPCNamespace:
             from xmlrpclib import Fault
             raise Fault(self._readlog_error, '')
         return 'mainlogdata'
+
+    def signalProcessGroup(self, name, signal):
+        from supervisor import xmlrpc
+        from xmlrpclib import Fault
+        if name == 'BAD_NAME':
+            raise Fault(xmlrpc.Faults.BAD_NAME, 'BAD_NAME')
+        return [
+            {'name':'foo_00',
+             'group':'foo',
+             'status': xmlrpc.Faults.SUCCESS,
+             'description': 'OK'},
+            {'name':'foo_01',
+             'group':'foo',
+             'status':xmlrpc.Faults.SUCCESS,
+             'description': 'OK'},
+            ]
+
+    def signalProcess(self, name, signal):
+        from supervisor import xmlrpc
+        from xmlrpclib import Fault
+        if signal == 'BAD_SIGNAL':
+            raise Fault(xmlrpc.Faults.BAD_SIGNAL, 'BAD_SIGNAL')
+        if name == 'BAD_NAME:BAD_NAME':
+            raise Fault(xmlrpc.Faults.BAD_NAME, 'BAD_NAME:BAD_NAME')
+        if name == 'BAD_NAME':
+            raise Fault(xmlrpc.Faults.BAD_NAME, 'BAD_NAME')
+        if name == 'NOT_RUNNING':
+            raise Fault(xmlrpc.Faults.NOT_RUNNING, 'NOT_RUNNING')
+        if name == 'FAILED':
+            raise Fault(xmlrpc.Faults.FAILED, 'FAILED')
+
+        return True
+
+    def signalAllProcesses(self, signal):
+        from supervisor import xmlrpc
+        return [
+            {'name':'foo',
+             'group':'foo',
+             'status': xmlrpc.Faults.SUCCESS,
+             'description': 'OK'},
+            {'name':'foo2',
+             'group':'foo2',
+             'status':xmlrpc.Faults.SUCCESS,
+             'description': 'OK'},
+            {'name':'failed',
+             'group':'failed_group',
+             'status':xmlrpc.Faults.BAD_NAME,
+             'description':'FAILED'}
+            ]
 
 class DummyPGroupConfig:
     def __init__(self, options, name='whatever', priority=999, pconfigs=None):
@@ -983,6 +1050,9 @@ class PopulatedDummySupervisor(DummySupervisor):
         process = self.process_groups[group_name].processes[process_name]
         setattr(process, attr_name, val)
 
+    def reap(self):
+        self.reaped = True
+
 class DummyDispatcher:
     write_event_handled = False
     read_event_handled = False
@@ -1055,7 +1125,7 @@ class DummyEvent:
 
     def __str__(self):
         return 'dummy event'
-        
+
 def dummy_handler(event, result):
     pass
 

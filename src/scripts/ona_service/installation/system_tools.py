@@ -22,9 +22,14 @@ from subprocess import call
 
 OBSRVBL_ROOT = '/opt/obsrvbl-ona/'
 OBSRVBL_USER = 'obsrvbl_ona'
+OBSRVBL_SERVICE = 'obsrvbl-ona'
 
 
 class BaseSystem(object):
+    logs_group = 'adm'
+    admin_group = 'root'
+    sudoers_path = '/etc/sudoers'
+
     def add_user(self):
         """
         Adds a system user that preferably doesn't have a home directory,
@@ -58,7 +63,7 @@ class BaseSystem(object):
 
         for args in (
             ['chown', '-R', user_group, OBSRVBL_ROOT],
-            ['chown', 'root:root', pna_path],
+            ['chown', 'root:{}'.format(self.admin_group), pna_path],
         ):
             return_code = call(args)
 
@@ -68,9 +73,10 @@ class BaseSystem(object):
 
     def set_user_group(self):
         """
-        Adds the ONA user to the adm group so it can read the system logs.
+        Adds the ONA user to a group (adm or wheel) that lets it read the
+        system logs.
         """
-        call(['usermod', '-a', '-G', 'adm', OBSRVBL_USER])
+        call(['usermod', '-a', '-G', self.logs_group, OBSRVBL_USER])
 
     def set_sudoer(self):
         """
@@ -79,10 +85,14 @@ class BaseSystem(object):
         make are valid.
         """
         # Step 0: Check to see if the obsrvbl_ona entries are already present
-        command = 'grep {} /etc/sudoers > /dev/null'.format(OBSRVBL_USER)
+        command = 'grep {} {} > /dev/null'.format(
+            OBSRVBL_USER, self.sudoers_path
+        )
         return_code = call([command], shell=True)
         if return_code == 0:
-            print('{} is already in /etc/sudoers'.format(OBSRVBL_USER))
+            print(
+                '{} is already in {}'.format(OBSRVBL_USER, self.sudoers_path)
+            )
             return
 
         # Step 1: Concatenate the original file and our additions to a
@@ -91,14 +101,14 @@ class BaseSystem(object):
         # Step 3: Verify that the new file is owned by the root user and group
         # Step 4: Set the new file's read/write/execute permissions to 0440
         # Step 5: Replace the original file
-        sudoers_path = join(OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers')
+        src_path = join(OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers')
         tmp_path = join(OBSRVBL_ROOT, 'system', 'sudoers.tmp')
         for command in (
-            'cat /etc/sudoers {} > {}'.format(sudoers_path, tmp_path),
+            'cat {} {} > {}'.format(self.sudoers_path, src_path, tmp_path),
             'visudo -c -f {}'.format(tmp_path),
-            'chown root:root {}'.format(tmp_path),
+            'chown root:{} {}'.format(self.admin_group, tmp_path),
             'chmod 0440 {}'.format(tmp_path),
-            'mv {} /etc/sudoers'.format(tmp_path),
+            'mv {} {}'.format(tmp_path, self.sudoers_path),
         ):
             return_code = call([command], shell=True)
 
@@ -166,16 +176,16 @@ class SystemdMixin(BaseSystem):
 
         # Symlink the ONA service file to the startup directory
         link_source = join(
-            OBSRVBL_ROOT, 'system/systemd/obsrvbl-ona.service'
+            OBSRVBL_ROOT, 'system/systemd/{}.service'.format(OBSRVBL_SERVICE)
         )
         link_name = join(
-            self.systemd_startup_dir, 'obsrvbl-ona.service'
+            self.systemd_startup_dir, '{}.service'.format(OBSRVBL_SERVICE)
         )
         symlink(link_source, link_name)
 
         # Register the main ONA service
         call(['systemctl', 'daemon-reload'])
-        call(['systemctl', 'enable', 'obsrvbl-ona.service'])
+        call(['systemctl', 'enable', '{}.service'.format(OBSRVBL_SERVICE)])
 
     def start_service(self, service_name, instance=None):
         service_name = self._get_service_name(service_name, instance)
@@ -294,7 +304,7 @@ class BusyBoxMixin(BaseSystem):
         call(args)
 
     def set_user_group(self):
-        call(['addgroup', OBSRVBL_USER, 'adm'])
+        call(['addgroup', OBSRVBL_USER, self.logs_group])
 
 
 class DebianMixin(BaseSystem):
@@ -409,3 +419,44 @@ class UbuntuVivid(SystemdMixin, DebianMixin, BaseSystem):
     """
     systemd_service_dir = '/lib/systemd/system'
     systemd_startup_dir = '/etc/systemd/system'
+
+
+class FreeBSD_10(BaseSystem):
+    admin_group = 'wheel'
+    sudoers_path = '/usr/local/etc/sudoers'
+
+    def add_user(self):
+        # Don't create a user that already exists
+        if OBSRVBL_USER in self.get_users():
+            return
+
+        args = [
+            'pw', 'useradd',
+            '-n', OBSRVBL_USER,  # User name
+            '-d', OBSRVBL_ROOT,  # Home directory
+            '-s', '/sbin/nologin'  # No shell access allowed
+        ]
+        call(args)
+
+    def install_services(self):
+        src_path = join(
+            OBSRVBL_ROOT, 'system/bsd-init/{}'.format(OBSRVBL_SERVICE)
+        )
+        dst_path = '/etc/rc.d/{}'.format(OBSRVBL_SERVICE)
+        copy(src_path, dst_path)
+        call(['chmod', '0555', dst_path])
+
+    def set_user_group(self):
+        pass
+
+    def start_service(self, service_name, instance=None):
+        return_code = call(['sudo', 'service', service_name, 'start'])
+
+        if return_code != 0:
+            err_msg = 'Error starting {}: {}'.format(service_name, return_code)
+            raise RuntimeError(err_msg)
+
+    def stop_service(self, service_name, instance=None):
+        return_code = call(['sudo', 'service', service_name, 'stop'])
+
+        return return_code

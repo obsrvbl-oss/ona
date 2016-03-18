@@ -13,17 +13,17 @@
 # limitations under the License.
 import signal
 
+from datetime import datetime
+from mock import Mock, patch
 from unittest import TestCase
 
 from ona_service.service import Service
 
 
 class AwesomeAndTotallySweetService(Service):
-    def __init__(self):
-        kwargs = {
-            'data_type': 'datum',
-            'poll_seconds': 0,
-        }
+    def __init__(self, **kwargs):
+        kwargs.setdefault('data_type', 'datum')
+        kwargs.setdefault('poll_seconds', 0)
         super(AwesomeAndTotallySweetService, self).__init__(**kwargs)
         self.called = False
 
@@ -43,3 +43,53 @@ class ServiceTestCase(TestCase):
         service.run()
 
         self.assertTrue(service.called)
+
+    @patch('ona_service.service.utcnow', autospec=True)
+    @patch('ona_service.service.sleep', autospec=True)
+    def test_sleep(self, mock_sleep, mock_utcnow):
+        t1 = datetime(2015, 10, 1, 1, 30)
+        t2 = datetime(2015, 10, 1, 1, 30)
+        mock_utcnow.side_effect = [t1, t2]
+
+        service = AwesomeAndTotallySweetService(poll_seconds=30)
+        service.stop_event = Mock()
+        service.stop_event.is_set.side_effect = [False, False, True]
+
+        service.run()
+
+        self.assertTrue(service.called)
+        mock_sleep.assert_called_once_with(30)
+
+    @patch('ona_service.service.utcnow', autospec=True)
+    @patch('ona_service.service.sleep', autospec=True)
+    def test_sleep__short(self, mock_sleep, mock_utcnow):
+        t1 = datetime(2015, 10, 1, 1, 30)
+        t2 = datetime(2015, 10, 1, 1, 30, 3)
+        mock_utcnow.side_effect = [t1, t2]
+
+        service = AwesomeAndTotallySweetService(poll_seconds=30)
+        service.stop_event = Mock()
+        service.stop_event.is_set.side_effect = [False, False, True]
+
+        service.run()
+
+        self.assertTrue(service.called)
+        mock_sleep.assert_called_once_with(27)  # 30 - 3
+
+    @patch('ona_service.service.utcnow', autospec=True)
+    @patch('ona_service.service.sleep', autospec=True)
+    def test_sleep__long_execute(self, mock_sleep, mock_utcnow):
+        t1 = datetime(2015, 10, 1, 1, 30)
+        t2 = datetime(2015, 10, 1, 1, 30, 31)
+        mock_utcnow.side_effect = [t1, t2]
+
+        service = AwesomeAndTotallySweetService(poll_seconds=30)
+        service.stop_event = Mock()
+        service.stop_event.is_set.side_effect = [False, False, True]
+
+        service.run()
+
+        self.assertTrue(service.called)
+        # if we take more than poll_seconds to run the job, sleep(0) and jump
+        # right back in.
+        mock_sleep.assert_called_once_with(0)
