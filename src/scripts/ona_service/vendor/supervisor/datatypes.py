@@ -7,12 +7,6 @@ import shlex
 import urlparse
 from supervisor.loggers import getLevelNumByDescription
 
-here = None
-
-def set_here(v):
-    global here
-    here = v
-
 def process_or_group_name(name):
     """Ensures that a process or group name is not created with
        characters that break the eventlistener protocol"""
@@ -82,7 +76,8 @@ def dict_of_key_value_pairs(arg):
     while i < tokens_len:
         k_eq_v = tokens[i:i+3]
         if len(k_eq_v) != 3 or k_eq_v[1] != '=':
-            raise ValueError("Unexpected end of key/value pairs")
+            raise ValueError(
+                "Unexpected end of key/value pairs in value '%s'" % arg)
         D[k_eq_v[0]] = k_eq_v[2].strip('\'"')
         i += 4
     return D
@@ -109,9 +104,9 @@ def logfile_name(val):
 class RangeCheckedConversion:
     """Conversion helper that range checks another conversion."""
 
-    def __init__(self, conversion, rmin=None, rmax=None):
-        self._min = rmin
-        self._max = rmax
+    def __init__(self, conversion, min=None, max=None):
+        self._min = min
+        self._max = max
         self._conversion = conversion
 
     def __call__(self, value):
@@ -124,7 +119,7 @@ class RangeCheckedConversion:
                              % (repr(v), repr(self._max)))
         return v
 
-port_number = RangeCheckedConversion(integer, rmin=1, rmax=0xffff).__call__
+port_number = RangeCheckedConversion(integer, min=1, max=0xffff).__call__
 
 def inet_address(s):
     # returns (host, port) tuple
@@ -203,8 +198,12 @@ class InetStreamSocketConfig(SocketConfig):
 
     def create_and_bind(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(self.addr())
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(self.addr())
+        except:
+            sock.close()
+            raise
         return sock
 
 class UnixStreamSocketConfig(SocketConfig):
@@ -228,13 +227,14 @@ class UnixStreamSocketConfig(SocketConfig):
         if os.path.exists(self.path):
             os.unlink(self.path)
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.bind(self.addr())
         try:
+            sock.bind(self.addr())
             self._chown()
             self._chmod()
         except:
             sock.close()
-            os.unlink(self.path)
+            if os.path.exists(self.path):
+                os.unlink(self.path)
             raise
         return sock
 
@@ -326,15 +326,13 @@ def octal_type(arg):
         raise ValueError('%s can not be converted to an octal type' % arg)
 
 def existing_directory(v):
-    nv = v % {'here':here}
-    nv = os.path.expanduser(nv)
+    nv = os.path.expanduser(v)
     if os.path.isdir(nv):
         return nv
     raise ValueError('%s is not an existing directory' % v)
 
 def existing_dirpath(v):
-    nv = v % {'here':here}
-    nv = os.path.expanduser(nv)
+    nv = os.path.expanduser(v)
     dir = os.path.dirname(nv)
     if not dir:
         # relative pathname with no directory component
@@ -384,7 +382,7 @@ def url(value):
     scheme, netloc, path, params, query, fragment = urlparse.urlparse(uri)
     if scheme and (netloc or path):
         return value
-    raise ValueError("value %s is not a URL" % value)
+    raise ValueError("value %r is not a URL" % value)
 
 # all valid signal numbers
 SIGNUMS = [ getattr(signal, k) for k in dir(signal) if k.startswith('SIG') ]
@@ -398,9 +396,9 @@ def signal_number(value):
             name = 'SIG' + name
         num = getattr(signal, name, None)
         if num is None:
-            raise ValueError('value %s is not a valid signal name' % value)
+            raise ValueError('value %r is not a valid signal name' % value)
     if num not in SIGNUMS:
-        raise ValueError('value %s is not a valid signal number' % value)
+        raise ValueError('value %r is not a valid signal number' % value)
     return num
 
 class RestartWhenExitUnexpected:

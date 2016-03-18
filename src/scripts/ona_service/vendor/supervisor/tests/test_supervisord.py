@@ -28,6 +28,7 @@ class EntryPointTests(unittest.TestCase):
             'donothing.conf')
         import StringIO
         new_stdout = StringIO.StringIO()
+        new_stdout.fileno = lambda: 1
         old_stdout = sys.stdout
         try:
             tempdir = tempfile.mkdtemp()
@@ -50,6 +51,7 @@ class EntryPointTests(unittest.TestCase):
                 'donothing.conf')
             import StringIO
             new_stdout = StringIO.StringIO()
+            new_stdout.fileno = lambda: 1
             old_stdout = sys.stdout
             try:
                 tempdir = tempfile.mkdtemp()
@@ -133,7 +135,7 @@ class SupervisordTests(unittest.TestCase):
         pconfig = DummyPConfig(options, 'process', 'process', '/bin/process1')
         process = DummyProcess(pconfig)
         process.drained = False
-        process.killing = 1
+        process.killing = True
         process.laststop = None
         process.waitstatus = None, None
         options.pidhistory = {1:process}

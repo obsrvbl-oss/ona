@@ -223,8 +223,8 @@ class RangeCheckedConversionTests(unittest.TestCase):
     def _getTargetClass(self):
         return datatypes.RangeCheckedConversion
 
-    def _makeOne(self, conversion, rmin=None, rmax=None):
-        return self._getTargetClass()(conversion, rmin, rmax)
+    def _makeOne(self, conversion, min=None, max=None):
+        return self._getTargetClass()(conversion, min, max)
 
     def test_below_lower_bound(self):
         conversion = self._makeOne(lambda *arg: -1, 0)
@@ -315,7 +315,7 @@ class ExistingDirectoryTests(unittest.TestCase):
         self.assertEqual(path, self._callFUT(path))
 
     def test_dir_does_not_exist(self):
-        path = os.path.join(os.path.dirname(__file__), 'nonexistant')
+        path = os.path.join(os.path.dirname(__file__), 'nonexistent')
         try:
             self._callFUT(path)
             self.fail()
@@ -338,13 +338,6 @@ class ExistingDirectoryTests(unittest.TestCase):
             path = self._callFUT('~')
             self.assertEqual(home, path)
 
-    def test_expands_here(self):
-        datatypes.here = os.path.dirname(__file__)
-        try:
-            self.assertEqual(self._callFUT('%(here)s'), datatypes.here)
-        finally:
-            datatypes.here = None
-
 class ExistingDirpathTests(unittest.TestCase):
     def _callFUT(self, arg):
         return datatypes.existing_dirpath(arg)
@@ -356,7 +349,7 @@ class ExistingDirpathTests(unittest.TestCase):
         self.assertEqual(self._callFUT('foo'), 'foo')
 
     def test_raises_if_dir_does_not_exist(self):
-        path = os.path.join(os.path.dirname(__file__), 'nonexistant', 'foo')
+        path = os.path.join(os.path.dirname(__file__), 'nonexistent', 'foo')
         try:
             self._callFUT(path)
             self.fail()
@@ -381,14 +374,6 @@ class ExistingDirpathTests(unittest.TestCase):
         if os.path.exists(home):
             path = self._callFUT('~/foo')
             self.assertEqual(os.path.join(home, 'foo'), path)
-
-    def test_expands_here(self):
-        datatypes.here = os.path.dirname(__file__)
-        try:
-            expected = os.path.join(datatypes.here, 'foo')
-            self.assertEqual(self._callFUT('%(here)s/foo'), expected)
-        finally:
-            datatypes.here = None
 
 class LoggingLevelTests(unittest.TestCase):
     def _callFUT(self, arg):
@@ -704,7 +689,7 @@ class SignalNumberTests(unittest.TestCase):
             self._callFUT('12345678')
             self.fail()
         except ValueError, e:
-            expected = "value 12345678 is not a valid signal number"
+            expected = "value '12345678' is not a valid signal number"
             self.assertEqual(e.args[0], expected)
 
     def test_raises_for_bad_name(self):
@@ -712,7 +697,7 @@ class SignalNumberTests(unittest.TestCase):
             self._callFUT('BADSIG')
             self.fail()
         except ValueError, e:
-            expected = "value BADSIG is not a valid signal name"
+            expected = "value 'BADSIG' is not a valid signal name"
             self.assertEqual(e.args[0], expected)
 
 class AutoRestartTests(unittest.TestCase):

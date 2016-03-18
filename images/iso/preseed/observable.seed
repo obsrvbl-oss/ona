@@ -22,11 +22,11 @@ d-i	grub-installer/timeout	string 2
 d-i netcfg/get_hostname string ona-default
 # Add the network and tasks oem-config steps by default.
 oem-config	oem-config/steps	multiselect language, timezone, keyboard, user, network, tasks
+# Extra packages to make sure are installed (Observable)
+d-i	pkgsel/include	string adduser python2.7 sudo tcpdump python-psutil nfdump iptables-persistent nmap
 # Don't prompt user to save iptables.
 iptables-persistent iptables-persistent/autosave_v6 boolean false
 iptables-persistent iptables-persistent/autosave_v4 boolean false
-# Extra packages to make sure are installed (Observable)
-d-i	pkgsel/include	string adduser python2.7 sudo tcpdump python-psutil
 # Configure the host with our default settings (Observable)
 d-i	preseed/late_command	string cp -r /cdrom/ona/ /target/root/ ; chroot /target chmod +x /root/ona/configure.sh ; chroot /target bash /root/ona/configure.sh
 # Select OpenSSH server by default (Observable)

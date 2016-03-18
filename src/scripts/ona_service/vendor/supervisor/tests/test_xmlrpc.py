@@ -5,6 +5,42 @@ from supervisor.tests.base import DummySupervisor
 from supervisor.tests.base import DummyRequest
 from supervisor.tests.base import DummySupervisorRPCNamespace
 
+class GetFaultDescriptionTests(unittest.TestCase):
+    def test_returns_description_for_known_fault(self):
+        from supervisor import xmlrpc
+        desc = xmlrpc.getFaultDescription(xmlrpc.Faults.SHUTDOWN_STATE)
+        self.assertEqual(desc, 'SHUTDOWN_STATE')
+
+    def test_returns_unknown_for_unknown_fault(self):
+        from supervisor import xmlrpc
+        desc = xmlrpc.getFaultDescription(999999)
+        self.assertEqual(desc, 'UNKNOWN')
+
+class RPCErrorTests(unittest.TestCase):
+    def _getTargetClass(self):
+        from supervisor.xmlrpc import RPCError
+        return RPCError
+
+    def _makeOne(self, code, extra=None):
+        return self._getTargetClass()(code, extra)
+
+    def test_sets_text_with_fault_name_only(self):
+        from supervisor import xmlrpc
+        e = self._makeOne(xmlrpc.Faults.FAILED)
+        self.assertEqual(e.text, 'FAILED')
+
+    def test_sets_text_with_fault_name_and_extra(self):
+        from supervisor import xmlrpc
+        e = self._makeOne(xmlrpc.Faults.FAILED, 'oops')
+        self.assertEqual(e.text, 'FAILED: oops')
+
+    def test___str___shows_code_and_text(self):
+        from supervisor import xmlrpc
+        e = self._makeOne(xmlrpc.Faults.NO_FILE, '/nonexistent')
+        self.assertEqual(str(e),
+            "code=%r, text='NO_FILE: /nonexistent'" % xmlrpc.Faults.NO_FILE
+            )
+
 class XMLRPCMarshallingTests(unittest.TestCase):
     def test_xmlrpc_marshal(self):
         import xmlrpclib
@@ -32,14 +68,14 @@ class XMLRPCHandlerTests(unittest.TestCase):
         self.assertEqual(handler.rpcinterface.__class__, RootRPCInterface)
 
     def test_match(self):
-        class DummyRequest:
+        class DummyRequest2:
             def __init__(self, uri):
                 self.uri = uri
         supervisor = DummySupervisor()
         subinterfaces = [('supervisor', DummySupervisorRPCNamespace())]
         handler = self._makeOne(supervisor, subinterfaces)
-        self.assertEqual(handler.match(DummyRequest('/RPC2')), True)
-        self.assertEqual(handler.match(DummyRequest('/nope')), False)
+        self.assertEqual(handler.match(DummyRequest2('/RPC2')), True)
+        self.assertEqual(handler.match(DummyRequest2('/nope')), False)
 
     def test_continue_request_nosuchmethod(self):
         supervisor = DummySupervisor()
@@ -373,6 +409,324 @@ class IterparseLoadsTests(unittest.TestCase):
         self.assertEqual(params[10], [12, 'abc', 'def', 34])
         self.assertEqual(params[11], {'k': [1, {}]})
 
+class TestDeferredXMLRPCResponse(unittest.TestCase):
+    def _getTargetClass(self):
+        from supervisor.xmlrpc import DeferredXMLRPCResponse
+        return DeferredXMLRPCResponse
+
+    def _makeOne(self, request=None, callback=None):
+        if request is None:
+            request = DummyRequest(None, None, None, None, None)
+        if callback is None:
+            callback = Dummy()
+            callback.delay = 1
+        return self._getTargetClass()(request, callback)
+
+    def test_ctor(self):
+        callback = Dummy()
+        callback.delay = 1
+        inst = self._makeOne(request='request', callback=callback)
+        self.assertEqual(inst.callback, callback)
+        self.assertEqual(inst.delay, 1.0)
+        self.assertEqual(inst.request, 'request')
+        self.assertEqual(inst.finished, False)
+
+    def test_more_finished(self):
+        inst = self._makeOne()
+        inst.finished = True
+        result = inst.more()
+        self.assertEqual(result,  '')
+
+    def test_more_callback_returns_not_done_yet(self):
+        from supervisor.http import NOT_DONE_YET
+        def callback():
+            return NOT_DONE_YET
+        callback.delay = 1
+        inst = self._makeOne(callback=callback)
+        self.assertEqual(inst.more(), NOT_DONE_YET)
+
+    def test_more_callback_raises_RPCError(self):
+        from supervisor.xmlrpc import RPCError, Faults
+        def callback():
+            raise RPCError(Faults.UNKNOWN_METHOD)
+        callback.delay = 1
+        inst = self._makeOne(callback=callback)
+        self.assertEqual(inst.more(), None)
+        self.assertEqual(len(inst.request.producers), 1)
+        self.assertTrue('UNKNOWN_METHOD' in inst.request.producers[0])
+        self.assertTrue(inst.finished)
+
+    def test_more_callback_returns_value(self):
+        def callback():
+            return 'abc'
+        callback.delay = 1
+        inst = self._makeOne(callback=callback)
+        self.assertEqual(inst.more(), None)
+        self.assertEqual(len(inst.request.producers), 1)
+        self.assertTrue('abc' in inst.request.producers[0])
+        self.assertTrue(inst.finished)
+
+    def test_more_callback_raises_unexpected_exception(self):
+        def callback():
+            raise ValueError('foo')
+        callback.delay = 1
+        inst = self._makeOne(callback=callback)
+        self.assertEqual(inst.more(), None)
+        self.assertEqual(inst.request._error, 500)
+        self.assertTrue(inst.finished)
+        logged = inst.request.channel.server.logger.logged
+        self.assertEqual(len(logged), 1)
+        src, msg = logged[0]
+        self.assertEqual(src, 'XML-RPC response callback error')
+        self.assertTrue("Traceback" in msg)
+
+class TestSystemNamespaceRPCInterface(unittest.TestCase):
+    def _makeOne(self, namespaces=()):
+        from supervisor.xmlrpc import SystemNamespaceRPCInterface
+        return SystemNamespaceRPCInterface(namespaces)
+
+    def test_listMethods_gardenpath(self):
+        inst = self._makeOne()
+        result = inst.listMethods()
+        self.assertEqual(
+            result,
+            ['system.listMethods',
+             'system.methodHelp',
+             'system.methodSignature',
+             'system.multicall',
+             ]
+            )
+
+    def test_listMethods_omits_underscore_attrs(self):
+        class DummyNamespace(object):
+            def foo(self): pass
+            def _bar(self): pass
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        result = inst.listMethods()
+        self.assertEqual(
+            result,
+            ['ns1.foo',
+             'system.listMethods',
+             'system.methodHelp',
+             'system.methodSignature',
+             'system.multicall'
+             ]
+            )
+
+    def test_methodHelp_known_method(self):
+        inst = self._makeOne()
+        result = inst.methodHelp('system.listMethods')
+        self.assertTrue('array' in result)
+
+    def test_methodHelp_unknown_method(self):
+        from supervisor.xmlrpc import RPCError
+        inst = self._makeOne()
+        self.assertRaises(RPCError, inst.methodHelp, 'wont.be.found')
+
+    def test_methodSignature_known_method(self):
+        inst = self._makeOne()
+        result = inst.methodSignature('system.methodSignature')
+        self.assertEqual(result, ['array', 'string'])
+
+    def test_methodSignature_unknown_method(self):
+        from supervisor.xmlrpc import RPCError
+        inst = self._makeOne()
+        self.assertRaises(RPCError, inst.methodSignature, 'wont.be.found')
+
+    def test_methodSignature_with_bad_sig(self):
+        from supervisor.xmlrpc import RPCError
+        class DummyNamespace(object):
+            def foo(self):
+                """ @param string name The thing"""
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        self.assertRaises(RPCError, inst.methodSignature, 'ns1.foo')
+
+    def test_multicall_faults_for_recursion(self):
+        from supervisor.xmlrpc import Faults
+        inst = self._makeOne()
+        calls = [{'methodName':'system.multicall'}]
+        results = inst.multicall(calls)
+        self.assertEqual(
+            results,
+            [{'faultCode': Faults.INCORRECT_PARAMETERS,
+              'faultString': ('INCORRECT_PARAMETERS: Recursive '
+                              'system.multicall forbidden')}]
+            )
+
+    def test_multicall_faults_for_missing_methodName(self):
+        from supervisor.xmlrpc import Faults
+        inst = self._makeOne()
+        calls = [{}]
+        results = inst.multicall(calls)
+        self.assertEqual(
+            results,
+            [{'faultCode': Faults.INCORRECT_PARAMETERS,
+              'faultString': 'INCORRECT_PARAMETERS: No methodName'}]
+            )
+
+    def test_multicall_faults_for_methodName_bad_namespace(self):
+        from supervisor.xmlrpc import Faults
+        inst = self._makeOne()
+        calls = [{'methodName': 'bad.stopProcess'}]
+        results = inst.multicall(calls)
+        self.assertEqual(
+            results,
+            [{'faultCode': Faults.UNKNOWN_METHOD,
+              'faultString': 'UNKNOWN_METHOD'}]
+            )
+
+    def test_multicall_faults_for_methodName_good_ns_bad_method(self):
+        from supervisor.xmlrpc import Faults
+        class DummyNamespace(object):
+            pass
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        calls = [{'methodName': 'ns1.bad'}]
+        results = inst.multicall(calls)
+        self.assertEqual(
+            results,
+            [{'faultCode': Faults.UNKNOWN_METHOD,
+              'faultString': 'UNKNOWN_METHOD'}]
+            )
+
+    def test_multicall_returns_empty_results_for_empty_calls(self):
+        inst = self._makeOne()
+        calls = []
+        results = inst.multicall(calls)
+        self.assertEqual(results, [])
+
+    def test_multicall_performs_noncallback_functions_serially(self):
+        class DummyNamespace(object):
+            def say(self, name):
+                """ @param string name Process name"""
+                return name
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        calls = [
+            {'methodName': 'ns1.say', 'params': ['Alvin']},
+            {'methodName': 'ns1.say', 'params': ['Simon']},
+            {'methodName': 'ns1.say', 'params': ['Theodore']}
+        ]
+        results = inst.multicall(calls)
+        self.assertEqual(results, ['Alvin', 'Simon', 'Theodore'])
+
+    def test_multicall_catches_noncallback_exceptions(self):
+        import errno
+        from supervisor.xmlrpc import RPCError, Faults
+        class DummyNamespace(object):
+            def bad_name(self):
+                raise RPCError(Faults.BAD_NAME, 'foo')
+            def os_error(self):
+                raise OSError(errno.ENOENT)
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        calls = [{'methodName': 'ns1.bad_name'}, {'methodName': 'ns1.os_error'}]
+        results = inst.multicall(calls)
+
+        bad_name = {'faultCode': Faults.BAD_NAME,
+                    'faultString': 'BAD_NAME: foo'}
+        os_error = {'faultCode': Faults.FAILED,
+                    'faultString': "FAILED: %s:2" % OSError}
+        self.assertEqual(results, [bad_name, os_error])
+
+    def test_multicall_catches_callback_exceptions(self):
+        import errno
+        from supervisor.xmlrpc import RPCError, Faults
+        from supervisor.http import NOT_DONE_YET
+        class DummyNamespace(object):
+            def bad_name(self):
+                def inner():
+                    raise RPCError(Faults.BAD_NAME, 'foo')
+                return inner
+            def os_error(self):
+                def inner():
+                    raise OSError(errno.ENOENT)
+                return inner
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        calls = [{'methodName': 'ns1.bad_name'}, {'methodName': 'ns1.os_error'}]
+        callback = inst.multicall(calls)
+        results = NOT_DONE_YET
+        while results is NOT_DONE_YET:
+            results = callback()
+
+        bad_name = {'faultCode': Faults.BAD_NAME,
+                    'faultString': 'BAD_NAME: foo'}
+        os_error = {'faultCode': Faults.FAILED,
+                    'faultString': "FAILED: %s:2" % OSError}
+        self.assertEqual(results, [bad_name, os_error])
+
+    def test_multicall_performs_callback_functions_serially(self):
+        from supervisor.http import NOT_DONE_YET
+        class DummyNamespace(object):
+            def __init__(self):
+                self.stop_results = [NOT_DONE_YET, NOT_DONE_YET,
+                    NOT_DONE_YET, 'stop result']
+                self.start_results = ['start result']
+            def stopProcess(self, name):
+                def inner():
+                    result = self.stop_results.pop(0)
+                    if result is not NOT_DONE_YET:
+                        self.stopped = True
+                    return result
+                return inner
+            def startProcess(self, name):
+                def inner():
+                    if not self.stopped:
+                        raise Exception("This should not raise")
+                    return self.start_results.pop(0)
+                return inner
+        ns1 = DummyNamespace()
+        inst = self._makeOne([('ns1', ns1)])
+        calls = [{'methodName': 'ns1.stopProcess',
+                  'params': {'name': 'foo'}},
+                 {'methodName': 'ns1.startProcess',
+                  'params': {'name': 'foo'}}]
+        callback = inst.multicall(calls)
+        results = NOT_DONE_YET
+        while results is NOT_DONE_YET:
+            results = callback()
+        self.assertEqual(results, ['stop result', 'start result'])
+
+class Test_gettags(unittest.TestCase):
+    def _callFUT(self, comment):
+        from supervisor.xmlrpc import gettags
+        return gettags(comment)
+
+    def test_one_atpart(self):
+        lines = '@foo'
+        result = self._callFUT(lines)
+        self.assertEqual(
+            result,
+            [(0, None, None, None, ''), (0, 'foo', '', '', '')]
+            )
+
+    def test_two_atparts(self):
+        lines = '@foo array'
+        result = self._callFUT(lines)
+        self.assertEqual(
+            result,
+            [(0, None, None, None, ''), (0, 'foo', 'array', '', '')]
+            )
+
+    def test_three_atparts(self):
+        lines = '@foo array name'
+        result = self._callFUT(lines)
+        self.assertEqual(
+            result,
+            [(0, None, None, None, ''), (0, 'foo', 'array', 'name', '')]
+            )
+
+    def test_four_atparts(self):
+        lines = '@foo array name text'
+        result = self._callFUT(lines)
+        self.assertEqual(
+            result,
+            [(0, None, None, None, ''), (0, 'foo', 'array', 'name', 'text')]
+            )
+
 class DummyResponse:
     def __init__(self, status=200, body='', reason='reason'):
         self.status = status
@@ -381,6 +735,9 @@ class DummyResponse:
 
     def read(self):
         return self.body
+
+class Dummy(object):
+    pass
 
 class DummyConnection:
     closed = False

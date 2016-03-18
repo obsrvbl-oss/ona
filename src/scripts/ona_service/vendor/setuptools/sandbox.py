@@ -8,6 +8,9 @@ import re
 import contextlib
 import pickle
 
+from setuptools.extern import six
+from setuptools.extern.six.moves import builtins
+
 import pkg_resources
 
 if sys.platform.startswith('java'):
@@ -21,9 +24,6 @@ except NameError:
 _open = open
 from distutils.errors import DistutilsError
 from pkg_resources import working_set
-
-from setuptools import compat
-from setuptools.compat import builtins
 
 __all__ = [
     "AbstractSandbox", "DirectorySandbox", "SandboxViolation", "run_setup",
@@ -98,8 +98,8 @@ class UnpickleableException(Exception):
     """
     An exception representing another Exception that could not be pickled.
     """
-    @classmethod
-    def dump(cls, type, exc):
+    @staticmethod
+    def dump(type, exc):
         """
         Always return a dumped (pickled) type and exc. If exc can't be pickled,
         wrap it in UnpickleableException first.
@@ -107,6 +107,8 @@ class UnpickleableException(Exception):
         try:
             return pickle.dumps(type), pickle.dumps(exc)
         except Exception:
+            # get UnpickleableException inside the sandbox
+            from setuptools.sandbox import UnpickleableException as cls
             return cls.dump(cls, cls(repr(exc)))
 
 
@@ -136,7 +138,7 @@ class ExceptionSaver:
             return
 
         type, exc = map(pickle.loads, self._saved)
-        compat.reraise(type, exc, self._tb)
+        six.reraise(type, exc, self._tb)
 
 
 @contextlib.contextmanager
@@ -382,6 +384,7 @@ class DirectorySandbox(AbstractSandbox):
         AbstractSandbox.__init__(self)
 
     def _violation(self, operation, *args, **kw):
+        from setuptools.sandbox import SandboxViolation
         raise SandboxViolation(operation, args, kw)
 
     if _file:

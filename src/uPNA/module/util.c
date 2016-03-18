@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <sched.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
 #include <pcap.h>

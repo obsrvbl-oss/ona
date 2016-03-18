@@ -5,13 +5,13 @@
 Usage: %s [options] [action [arguments]]
 
 Options:
--c/--configuration -- configuration file path (default /etc/supervisord.conf)
+-c/--configuration FILENAME -- configuration file path (default /etc/supervisord.conf)
 -h/--help -- print usage message and exit
 -i/--interactive -- start an interactive shell after executing commands
 -s/--serverurl URL -- URL on which supervisord server is listening
      (default "http://localhost:9001").
--u/--username -- username to use for authentication with server
--p/--password -- password to use for authentication with server
+-u/--username USERNAME -- username to use for authentication with server
+-p/--password PASSWORD -- password to use for authentication with server
 -r/--history-file -- keep a readline history (if readline is available)
 
 action [arguments] -- see below
@@ -38,6 +38,7 @@ from supervisor.options import make_namespec
 from supervisor.options import split_namespec
 from supervisor import xmlrpc
 from supervisor import states
+from supervisor import http_client
 
 class fgthread(threading.Thread):
     """ A subclass of threading.Thread, with a kill() method.
@@ -47,7 +48,6 @@ class fgthread(threading.Thread):
 
     def __init__(self, program, ctl):
         threading.Thread.__init__(self)
-        import http_client
         self.killed = False
         self.program = program
         self.ctl = ctl
@@ -116,6 +116,38 @@ class Controller(cmd.Cmd):
     def emptyline(self):
         # We don't want a blank line to repeat the last command.
         return
+
+    def exec_cmdloop(self, args, options):
+        try:
+            import readline
+            delims = readline.get_completer_delims()
+            delims = delims.replace(':', '')  # "group:process" as one word
+            delims = delims.replace('*', '')  # "group:*" as one word
+            delims = delims.replace('-', '')  # names with "-" as one word
+            readline.set_completer_delims(delims)
+
+            if options.history_file:
+                try:
+                    readline.read_history_file(options.history_file)
+                except IOError:
+                    pass
+
+                def save():
+                    try:
+                        readline.write_history_file(options.history_file)
+                    except IOError:
+                        pass
+
+                import atexit
+                atexit.register(save)
+        except ImportError:
+            pass
+        try:
+            self.cmdqueue.append('status')
+            self.cmdloop()
+        except KeyboardInterrupt:
+            self.output('')
+            pass
 
     def onecmd(self, line):
         """ Override the onecmd method to:
@@ -256,8 +288,8 @@ class Controller(cmd.Cmd):
             elif action in ('add', 'remove', 'update'):
                 matches = self._complete_groups(text)
             # actions that accept a process name
-            elif action in ('clear', 'fg', 'pid', 'restart', 'start',
-                            'stop', 'status', 'tail'):
+            elif action in ('clear', 'fg', 'pid', 'restart', 'signal',
+                            'start', 'status', 'stop', 'tail'):
                 matches = self._complete_processes(text)
         if len(matches) > state:
             return matches[state]
@@ -379,9 +411,6 @@ class DefaultControllerPlugin(ControllerPluginBase):
     name = 'default'
     listener = None # for unit tests
     def _tailf(self, path):
-        if not self.ctl.upcheck():
-            return
-
         self.ctl.output('==> Press Ctrl-C to exit <==')
 
         username = self.ctl.options.username
@@ -393,7 +422,6 @@ class DefaultControllerPlugin(ControllerPluginBase):
             # always sends a Connection: close header).  We use a
             # homegrown client based on asyncore instead.  This makes
             # me sad.
-            import http_client
             if self.listener is None:
                 listener = http_client.Listener()
             else:
@@ -718,21 +746,26 @@ class DefaultControllerPlugin(ControllerPluginBase):
             "start <name> <name>\tStart multiple processes or groups")
         self.ctl.output("start all\t\tStart all processes")
 
-    def _stopresult(self, result):
+    def _signalresult(self, result, success='signalled'):
         name = make_namespec(result['group'], result['name'])
         code = result['status']
         fault_string = result['description']
         template = '%s: ERROR (%s)'
         if code == xmlrpc.Faults.BAD_NAME:
             return template % (name, 'no such process')
+        elif code == xmlrpc.Faults.BAD_SIGNAL:
+            return template % (name, 'bad signal name')
         elif code == xmlrpc.Faults.NOT_RUNNING:
             return template % (name, 'not running')
         elif code == xmlrpc.Faults.SUCCESS:
-            return '%s: stopped' % name
+            return '%s: %s' % (name, success)
         elif code == xmlrpc.Faults.FAILED:
             return fault_string
         # assertion
         raise ValueError('Unknown result code %s for %s' % (code, name))
+
+    def _stopresult(self, result):
+        return self._signalresult(result, success='stopped')
 
     def do_stop(self, arg):
         if not self.ctl.upcheck():
@@ -785,6 +818,63 @@ class DefaultControllerPlugin(ControllerPluginBase):
         self.ctl.output("stop <gname>:*\t\tStop all processes in a group")
         self.ctl.output("stop <name> <name>\tStop multiple processes or groups")
         self.ctl.output("stop all\t\tStop all processes")
+
+    def do_signal(self, arg):
+        if not self.ctl.upcheck():
+            return
+
+        args = arg.split()
+        if len(args) < 2:
+            self.ctl.output(
+                'Error: signal requires a signal name and a process name')
+            self.help_signal()
+            return
+
+        sig = args[0]
+        names = args[1:]
+        supervisor = self.ctl.get_supervisor()
+
+        if 'all' in names:
+            results = supervisor.signalAllProcesses(sig)
+            for result in results:
+                result = self._signalresult(result)
+                self.ctl.output(result)
+
+        else:
+            for name in names:
+                group_name, process_name = split_namespec(name)
+                if process_name is None:
+                    try:
+                        results = supervisor.signalProcessGroup(
+                            group_name, sig
+                            )
+                        for result in results:
+                            result = self._signalresult(result)
+                            self.ctl.output(result)
+                    except xmlrpclib.Fault, e:
+                        if e.faultCode == xmlrpc.Faults.BAD_NAME:
+                            error = "%s: ERROR (no such group)" % group_name
+                            self.ctl.output(error)
+                        else:
+                            raise
+                else:
+                    try:
+                        supervisor.signalProcess(name, sig)
+                    except xmlrpclib.Fault, e:
+                        error = self._signalresult({'status': e.faultCode,
+                                                    'name': process_name,
+                                                    'group': group_name,
+                                                    'description':e.faultString})
+                        self.ctl.output(error)
+                    else:
+                        name = make_namespec(group_name, process_name)
+                        self.ctl.output('%s: signalled' % name)
+
+    def help_signal(self):
+        self.ctl.output("signal <signal name> <name>\t\tSignal a process")
+        self.ctl.output("signal <signal name> <gname>:*\t\tSignal all processes in a group")
+        self.ctl.output("signal <signal name> <name> <name>\tSignal multiple processes or groups")
+        self.ctl.output("signal <signal name> all\t\tSignal all processes")
 
     def do_restart(self, arg):
         if not self.ctl.upcheck():
@@ -1178,42 +1268,20 @@ class DefaultControllerPlugin(ControllerPluginBase):
         self.ctl.output('fg <process>\tConnect to a process in foreground mode')
         self.ctl.output('Press Ctrl+C to exit foreground')
 
+
 def main(args=None, options=None):
     if options is None:
         options = ClientOptions()
+
     options.realize(args, doc=__doc__)
     c = Controller(options)
+
     if options.args:
         c.onecmd(" ".join(options.args))
-    if options.interactive:
-        try:
-            import readline
-            delims = readline.get_completer_delims()
-            delims = delims.replace(':', '') # "group:process" as one word
-            delims = delims.replace('*', '') # "group:*" as one word
-            delims = delims.replace('-', '') # names with "-" as one word
-            readline.set_completer_delims(delims)
 
-            if options.history_file:
-                try:
-                    readline.read_history_file(options.history_file)
-                except IOError:
-                    pass
-                def save():
-                    try:
-                        readline.write_history_file(options.history_file)
-                    except IOError:
-                        pass
-                import atexit
-                atexit.register(save)
-        except ImportError:
-            pass
-        try:
-            c.cmdqueue.append('status')
-            c.cmdloop()
-        except KeyboardInterrupt:
-            c.output('')
-            pass
+    if options.interactive:
+        c.exec_cmdloop(args, options)
+
 
 if __name__ == "__main__":
     main()

@@ -26,7 +26,7 @@ OBSRVBL_HOST="https://sensor.ext.obsrvbl.com"
 OBSRVBL_PNA_SERVICE="true"
 
 # Interfaces the pna software should monitor
-OBSRVBL_PNA_IFACES=`ls -1 /sys/class/net/ | grep -v "^lo"`
+OBSRVBL_PNA_IFACES=`ls -1 /sys/class/net/ | grep -v "^lo" || ifconfig -l ether`
 
 # Location of file defining networks and network ids to assign
 OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
@@ -41,6 +41,8 @@ OBSRVBL_NETFLOW_SERVICE="false"
 
 # Location to buffer netflow files before transfer
 OBSRVBL_NETFLOW_LOGDIR="/opt/obsrvbl-ona/logs/netflow"
+
+OBSRVBL_NETFLOW_PORT="9995"
 
 ##
 # log-watcher
@@ -85,6 +87,11 @@ OBSRVBL_OSSEC_ALERTS_PATH="/opt/obsrvbl-ossec/logs/alerts/alerts.json"
 # ona-suricata-alert-watcher
 ##
 OBSRVBL_SERVICE_SURICATA="false"
+
+##
+# ona-nmapper
+##
+OBSRVBL_NMAPPER="false"
 
 # load up auto and local config
 [ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO

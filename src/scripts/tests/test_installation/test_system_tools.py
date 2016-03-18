@@ -91,7 +91,6 @@ class BaseSystemTestCase(TestCase):
 
     @patch(PATCH_PATH.format('call'), autospec=True)
     def test_set_user_group(self, mock_call):
-        mock_call.set_user_group = 0
         self.base_system.set_user_group()
         command = 'usermod -a -G adm {}'.format(system_tools.OBSRVBL_USER)
         mock_call.assert_called_with(command.split(' '))
@@ -421,3 +420,60 @@ class RHEL_5TestCase(TestCase):
         ).split(' ')
         expected_calls = [MockCall(addgroup_args), MockCall(adduser_args)]
         mock_call.assert_has_calls(expected_calls)
+
+
+class FreeBSD_10_TestCase(TestCase):
+    def setUp(self):
+        self.freebsd_10 = system_tools.FreeBSD_10()
+
+    @patch(PATCH_PATH.format('call'), autospec=True)
+    @patch(PATCH_PATH.format('FreeBSD_10.get_users'), autospec=True)
+    def test_add_user(self, mock_get_users, mock_call):
+        # Try an already-existing user -> no calls
+        mock_get_users.return_value = {system_tools.OBSRVBL_USER, 'pcapaldi'}
+        self.freebsd_10.add_user()
+        self.assertEqual(mock_call.call_count, 0)
+
+        # No existing users -> add group and user
+        mock_get_users.return_value = {'dtennant', 'msmith', 'pcapaldi'}
+        self.freebsd_10.add_user()
+
+        adduser_args = (
+            'pw useradd -n {} -d {} -s /sbin/nologin'
+            .format(system_tools.OBSRVBL_USER, system_tools.OBSRVBL_ROOT)
+            .split(' ')
+        )
+        mock_call.assert_has_calls([MockCall(adduser_args)])
+
+    @patch(PATCH_PATH.format('copy'), autospec=True)
+    @patch(PATCH_PATH.format('call'), autospec=True)
+    def test_install_services(self, mock_call, mock_copy):
+        self.freebsd_10.install_services()
+        mock_copy.assert_called_once_with(
+            '/opt/obsrvbl-ona/system/bsd-init/obsrvbl-ona',
+            '/etc/rc.d/obsrvbl-ona'
+        )
+        mock_call.assert_called_once_with(
+            'chmod 0555 /etc/rc.d/obsrvbl-ona'.split()
+        )
+
+    def test_set_user_group(self):
+        self.freebsd_10.set_user_group()
+
+    @patch(PATCH_PATH.format('call'), autospec=True)
+    def test_start_service(self, mock_call):
+        mock_call.return_value = 0
+        self.freebsd_10.start_service('obsrvbl-ona')
+
+        mock_call.assert_called_with('sudo service obsrvbl-ona start'.split())
+
+        mock_call.return_value = 1
+        with self.assertRaises(RuntimeError):
+            self.freebsd_10.start_service('obsrvbl-ona')
+
+    @patch(PATCH_PATH.format('call'), autospec=True)
+    def test_stop_service(self, mock_call):
+        for expected in (0, 1):
+            mock_call.return_value = expected
+            actual = self.freebsd_10.stop_service('obsrvbl-ona')
+            self.assertEqual(actual, expected)

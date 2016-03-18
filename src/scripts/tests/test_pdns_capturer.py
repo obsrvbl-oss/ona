@@ -16,7 +16,7 @@ from __future__ import print_function, unicode_literals
 import io
 
 from datetime import datetime
-from os import listdir
+from os import getenv, listdir
 from os.path import exists, join
 from shutil import rmtree
 from unittest import TestCase
@@ -62,6 +62,50 @@ class PdnsCapturerTestCase(TestCase):
             '-s', '0',
             '-c', '{}'.format(self.inst.packet_limit),
             '-G', '{}'.format(self.inst.capture_seconds),
+            '-U',
+            '-Z', 'obsrvbl_ona',
+            'ip and udp src port 53'
+        ]
+        mock_Popen.assert_called_once_with(tcpdump_args)
+
+    @patch('ona_service.tcpdump_capturer.platform', 'freebsd10')
+    @patch('ona_service.tcpdump_capturer.Popen', autospec=True)
+    def test_start_capture_freebsd(self, mock_Popen):
+        inst = PdnsCapturer()
+        inst.start_capture()
+        tcpdump_args = [
+            'sudo',
+            '/usr/sbin/tcpdump',
+            '-w', join(inst.pcap_dir, 'pdns_%s.pcap'),
+            '-s', '0',
+            '-c', '{}'.format(inst.packet_limit),
+            '-G', '{}'.format(inst.capture_seconds),
+            '-U',
+            '-Z', 'obsrvbl_ona',
+            'ip and udp src port 53'
+        ]
+        mock_Popen.assert_called_once_with(tcpdump_args)
+
+    @patch('ona_service.pdns_capturer.getenv', autospec=True)
+    @patch('ona_service.tcpdump_capturer.Popen', autospec=True)
+    def test_start_capture_freebsd_specific(self, mock_Popen, mock_getenv):
+        def getenv_side_effect(*args, **kwargs):
+            if args[0] == 'OBSRVBL_PDNS_CAPTURE_IFACE':
+                return 'em1'
+            return getenv(*args, **kwargs)
+
+        mock_getenv.side_effect = getenv_side_effect
+
+        inst = PdnsCapturer()
+        inst.start_capture()
+        tcpdump_args = [
+            'sudo',
+            '/usr/sbin/tcpdump',
+            '-w', join(inst.pcap_dir, 'pdns_%s.pcap'),
+            '-i', 'em1',
+            '-s', '0',
+            '-c', '{}'.format(inst.packet_limit),
+            '-G', '{}'.format(inst.capture_seconds),
             '-U',
             '-Z', 'obsrvbl_ona',
             'ip and udp src port 53'

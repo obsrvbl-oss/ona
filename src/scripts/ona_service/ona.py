@@ -74,14 +74,16 @@ CONFIG_PARAMS = {
     'LOG_WATCHER',
     'HOSTNAME_RESOLVER',
     'NOTIFICATION_PUBLISHER',
-    'PDNS_CAPTURER',
     'ARP_CAPTURER',
+    'IEC61850_CAPTURER',
+    'PDNS_CAPTURER',
     'SERVICE_OSSEC',
     'SERVICE_SURICATA',
     # Other parameters
     'PNA_IFACES',
     'PDNS_CAPTURE_IFACE',
     'SERVICE_KEY',
+    'NETFLOW_PORT',
 }
 
 ALLOWED_CHARS = re.compile(r"\A([-_*+.,:;<=>@'^?\n\r \tA-Za-z0-9])+\Z")

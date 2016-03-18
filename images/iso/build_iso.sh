@@ -21,7 +21,7 @@
 #    wrong.
 #
 
-RELEASE="${RELEASE:-14.04.3}"
+RELEASE="${RELEASE:-14.04.4}"
 ARCH="${ARCH:-amd64}"
 
 UBUNTU="http://releases.ubuntu.com"
@@ -60,6 +60,13 @@ if [ $ret -ne 0 ] ; then
   exit 1
 fi
 
+ret=$(which isohybrid)
+if [ $ret -ne 0 ] ; then
+  echo "missing isohybrid: $sudo apt-get install syslinux-utils"
+  exit 1
+fi
+
+
 mkdir $DIR/working
 pushd $DIR/working
   curl -o ${ubuntu_name} "${ubuntu_url}"
@@ -78,5 +85,7 @@ pushd $DIR/working
           -boot-load-size 4 -boot-info-table \
           -o "../${ona_name}" local
   $sudo umount cdrom
+  $sudo chown $USER:$USER "../${ona_name}"
+  isohybrid "../${ona_name}"
 popd
 $sudo rm -rf $DIR/working

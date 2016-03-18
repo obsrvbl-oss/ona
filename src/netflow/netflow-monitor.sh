@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Create the log directory
 mkdir -p $OBSRVBL_NETFLOW_LOGDIR
 
 ROTATE_PERIOD=60
@@ -22,6 +21,7 @@ ROTATE_PERIOD=60
 export TZ='Etc/UTC'
 
 exec nfcapd \
+    -p $OBSRVBL_NETFLOW_PORT \
     -l $OBSRVBL_NETFLOW_LOGDIR \
     -t ${ROTATE_PERIOD}s \
     -w \

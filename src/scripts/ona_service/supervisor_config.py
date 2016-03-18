@@ -80,11 +80,17 @@ PROGRAM_COMMANDS = {
     'ona-arp-capturer': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/arp_capturer.py'
     ],
+    'ona-iec61850-capturer': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/iec61850_capturer.py'
+    ],
     'ona-pdns-capturer': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/pdns_capturer.py'
     ],
     'ona-suricata-alert-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/suricata_alert_watcher.py'
+    ],
+    'ona-nmapper': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/nmapper.py'
     ],
 }
 
@@ -92,11 +98,13 @@ ENABLE_FLAGS = [
     ('OBSRVBL_NETFLOW_SERVICE', ['ona-netflow-monitor', 'ona-netflow-pusher']),
     ('OBSRVBL_HOSTNAME_RESOLVER', ['ona-hostname-resolver']),
     ('OBSRVBL_NOTIFICATION_PUBLISHER', ['ona-notification-publisher']),
-    ('OBSRVBL_PDNS_CAPTURER', ['ona-pdns-capturer']),
     ('OBSRVBL_ARP_CAPTURER', ['ona-arp-capturer']),
+    ('OBSRVBL_IEC61850_CAPTURER', ['ona-iec61850-capturer']),
+    ('OBSRVBL_PDNS_CAPTURER', ['ona-pdns-capturer']),
     ('OBSRVBL_SERVICE_OSSEC', ['ona-ossec-alert-watcher']),
     ('OBSRVBL_SERVICE_SURICATA', ['ona-suricata-alert-watcher']),
     ('OBSRVBL_LOG_WATCHER', ['ona-log-watcher']),
+    ('OBSRVBL_NMAPPER', ['ona-nmapper']),
 ]
 
 
