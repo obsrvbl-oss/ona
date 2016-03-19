@@ -10,7 +10,7 @@ RUN dpkg -i ona-service_UbuntuPrecise_amd64.deb
 
 # Switch to the unprivileged user, set some local configuration, and start.
 
-COPY run.sh /opt/obsrvbl-ona/run.sh
+COPY images/docker/run.sh /opt/obsrvbl-ona/run.sh
 RUN chmod +x /opt/obsrvbl-ona/run.sh
 
 USER obsrvbl_ona
