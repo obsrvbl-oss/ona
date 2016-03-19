@@ -1,0 +1,16 @@
+#!/bin/sh
+
+. /etc/rc.subr
+
+name=obsrvbl-ona
+rcvar=obsrvbl_ona_enable
+command="/opt/obsrvbl-ona/system/supervisord/ona-supervisord.sh"
+daemon_pid="/tmp/obsrvbl-ona.pid"
+start_cmd="/usr/sbin/daemon -f -P ${daemon_pid} -u obsrvbl_ona -r ${command}"
+stop_cmd="kill `cat ${daemon_pid}` || true"
+status_cmd="test -e ${daemon_pid} && echo '${name} is running' || echo '${name} is not running'"
+
+load_rc_config $name
+: ${obsrvbl_ona_enable="YES"}
+
+run_rc_command "$1"
