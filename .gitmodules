@@ -1,0 +1,4 @@
+[submodule "src/uPNA"]
+	path = src/uPNA
+    url = https://github.com/pcrowley/PNA.git
+    branch = uPNA
