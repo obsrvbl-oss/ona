@@ -39,7 +39,7 @@ from ona_service.log_watcher import (
 from ona_service.utils import utcnow
 
 
-class MSUtil(object):
+class MSUtilBase(object):
     """
     Not Microsoft. Mock pS util.
     """
@@ -48,17 +48,12 @@ class MSUtil(object):
     @staticmethod
     def cpu_times(percpu=False):
         t = namedtuple('cputimes', 'user,nice,system,idle')
-        if MSUtil.cpu_time_calls == 1:
+        if MSUtilBase.cpu_time_calls == 1:
             ret = t(50, 0, 500, 5000)
         else:
             ret = t(55, 0, 600, 6000)
-        MSUtil.cpu_time_calls += 1
+        MSUtilBase.cpu_time_calls += 1
         return [ret]
-
-    @staticmethod
-    def phymem_usage():
-        t = namedtuple('usage', 'total,used,free,percent')
-        return t(20, 18, 4, 80.0)
 
     @staticmethod
     def disk_partitions(all=True):
@@ -70,10 +65,29 @@ class MSUtil(object):
         t = namedtuple('usage', 'total,used,free,percent')
         return t(150, 40, 110, 88.3)
 
+
+class MSUtilOld(MSUtilBase):
+    @staticmethod
+    def phymem_usage():
+        t = namedtuple('usage', 'total,used,free,percent')
+        return t(20, 18, 4, 80.0)
+
     @staticmethod
     def network_io_counters(pernic=True):
         t = namedtuple('iostat', 'B_sent,B_recv,p_sent,p_recv')
         return {'lo': t(30, 30, 18, 18)}
+
+
+class MSUtilNew(MSUtilBase):
+    @staticmethod
+    def virtual_memory():
+        t = namedtuple('usage', 'total,used,free,percent')
+        return t(21, 19, 5, 81.0)
+
+    @staticmethod
+    def net_io_counters(pernic=True):
+        t = namedtuple('iostat', 'B_sent,B_recv,p_sent,p_recv')
+        return {'lo': t(31, 31, 19, 19)}
 
 
 class StatNodeTest(TestCase):
@@ -90,9 +104,9 @@ class StatNodeTest(TestCase):
         stats = node._gather()
         self.assertEqual(stats, {})
 
-    @patch('ona_service.log_watcher.psutil', MSUtil, create=True)
+    @patch('ona_service.log_watcher.psutil', MSUtilOld, create=True)
     @patch('ona_service.log_watcher.Popen', autospec=True)
-    def test_statnode_nic(self, mock_Popen):
+    def test_statnode_nic_old(self, mock_Popen):
         # predictable Popen().communicate
         out = (
             'lo\tLink encap:Ethernet  HWaddr ff:ff:ff:ff:ff:3f\n'
@@ -112,9 +126,45 @@ class StatNodeTest(TestCase):
         ]
         self.assertEqual(stats, expected_stats)
 
+    @patch('ona_service.log_watcher.psutil', MSUtilNew, create=True)
+    @patch('ona_service.log_watcher.Popen', autospec=True)
+    def test_statnode_nic_new(self, mock_Popen):
+        # predictable Popen().communicate
+        out = (
+            'lo\tLink encap:Ethernet  HWaddr ff:ff:ff:ff:ff:3f\n'
+            'inet6 addr: ffff::fff:ffff:ffff:fff/64 Scope:Link\n'
+            'UP BROADCAST RUNNING PROMISC MULTICAST\n'
+            'MTU:1500  Metric:1\n'
+            'RX packets:19738210 errors:f dropped:8 overruns:1 frame 5\n'
+            'RX bytes:2131412\n'
+        )
+        mock_Popen(['ifconfig', 'lo']).communicate.return_value = (out, '')
+
+        node = StatNode(log_type='stats_log', api=self.watcher.api)
+        stats = node._net_io_counters()
+        expected_stats = [
+            {'nic': 'lo', 'B_recv': 31, 'B_sent': 31, 'p_recv': 19,
+             'p_sent': 19, 'dropped': 8, 'overruns': 1}
+        ]
+        self.assertEqual(stats, expected_stats)
+
+    @patch('ona_service.log_watcher.psutil', MSUtilOld, create=True)
+    def test_statnode_virtual_memory_old(self):
+        node = StatNode(log_type='stats_log', api=self.watcher.api)
+        actual = node._virtual_memory()
+        expected = {'free': 4, 'percent': 80.0, 'total': 20, 'used': 18}
+        self.assertEqual(actual, expected)
+
+    @patch('ona_service.log_watcher.psutil', MSUtilNew, create=True)
+    def test_statnode_virtual_memory_new(self):
+        node = StatNode(log_type='stats_log', api=self.watcher.api)
+        actual = node._virtual_memory()
+        expected = {'free': 5, 'percent': 81.0, 'total': 21, 'used': 19}
+        self.assertEqual(actual, expected)
+
     @patch('ona_service.log_watcher.HAS_PSUTIL', True)
     @patch('ona_service.log_watcher.Popen', autospec=True)
-    @patch('ona_service.log_watcher.psutil', MSUtil, create=True)
+    @patch('ona_service.log_watcher.psutil', MSUtilOld, create=True)
     @patch('ona_service.api.requests', autospec=True)
     @patch('ona_service.log_watcher.datetime', autospec=True)
     def test_statnode(self, mock_dt, mock_requests, mock_Popen):

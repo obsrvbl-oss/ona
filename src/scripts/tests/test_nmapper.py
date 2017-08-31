@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 from datetime import datetime
-from mock import patch, MagicMock
+from json import dumps
 from unittest import TestCase
+
+from mock import patch, MagicMock
 
 from ona_service.nmapper import (
     NmapperService,
@@ -50,7 +51,9 @@ MOCK_SCAN_RESULT = '''<nmaprun scanner="nmap" args="nmap -oX - 192.168.1.1 192.1
 
 
 class NmapperTest(TestCase):
-    maxDiff = None
+    def setUp(self):
+        self.inst = NmapperService()
+        self.inst.api = MagicMock()
 
     @patch('ona_service.nmapper.NmapProcess', autospec=True)
     def test__run_scan(self, mock_nmap_factory):
@@ -61,10 +64,9 @@ class NmapperTest(TestCase):
         mock_nmap.stdout = MOCK_SCAN_RESULT
 
         now = datetime(2015, 11, 4)
-        res = [r for r in _run_scan(['1.1.1.1', '2.2.2.2'], now)]
-        self.assertEquals(res, [
+        res = _run_scan(['1.1.1.1', '2.2.2.2'], now)
+        self.assertEqual(res, [
             {
-                'observation_type': 'scan_observation_v1',
                 'time': now.isoformat(),
                 'source': '192.168.1.42',
                 'ports': '',
@@ -72,7 +74,6 @@ class NmapperTest(TestCase):
                 'result': '',
             },
             {
-                'observation_type': 'scan_observation_v1',
                 'time': now.isoformat(),
                 'source': '192.168.1.1',
                 'ports': '22/closed, 80/open, 443/open',
@@ -90,8 +91,7 @@ class NmapperTest(TestCase):
         mock_nmap.stdout = 'foo'
         now = datetime(2015, 11, 4)
 
-        res = [r for r in _run_scan(['1.1.1.1', '2.2.2.2'], now)]
-        self.assertEquals(res, [])
+        self.assertIsNone(_run_scan(['1.1.1.1', '2.2.2.2'], now))
 
     @patch('ona_service.nmapper.NmapProcess', autospec=True)
     def test__run_scan__bad_parse(self, mock_nmap_factory):
@@ -102,43 +102,20 @@ class NmapperTest(TestCase):
         mock_nmap.stdout = 'foo'
         now = datetime(2015, 11, 4)
 
-        res = [r for r in _run_scan(['1.1.1.1', '2.2.2.2'], now)]
-        self.assertEquals(res, [])
-
-    def test__upload_results(self):
-        scanner = NmapperService()
-        scanner.api = MagicMock()
-        scanner.api.send_file.return_value = 's3://path'
-        now = datetime(2015, 11, 4)
-
-        scanner._upload_results('myfile', now)
-
-        scanner.api.send_file.assert_called_once_with(
-            'logs', 'myfile', now, suffix='nmap')
-        scanner.api.send_signal.assert_called_once_with(
-            'logs',
-            {
-                'path': 's3://path',
-                'log_type': 'observations',
-            },
-        )
+        self.assertIsNone(_run_scan(['1.1.1.1', '2.2.2.2'], now))
 
     @patch('ona_service.nmapper.MAX_SIMULTANEOUS_TARGETS', 1)
     @patch('ona_service.nmapper._run_scan', autospec=True)
-    @patch('ona_service.nmapper.NmapperService._upload_results', autospec=True)
-    def test_execute(self, mock_upload, mock_scan):
+    def test_execute(self, mock_scan):
         mock_scan.return_value = [{'some': 'json'}, {'more': 'json'}]
         actual_results = []
 
-        def _dummy_upload(self, filename, now):
+        def _dummy_upload(self, filename, now, suffix=None):
             with open(filename) as f:
                 actual_results.append(f.read())
-        mock_upload.side_effect = _dummy_upload
-
-        scanner = NmapperService()
+        self.inst.api.send_file.side_effect = _dummy_upload
 
         # mocking out _get_target_ips
-        scanner.api = MagicMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {
             'meta': {'total_count': 1},
@@ -151,33 +128,31 @@ class NmapperTest(TestCase):
                 }
             ]
         }
-        scanner.api.get_data.return_value = mock_response
+        self.inst.api.get_data.return_value = mock_response
 
         now = datetime(2015, 11, 4)
-        scanner.execute(now)
+        self.inst.execute(now)
 
         utcnow = now.replace(tzinfo=utc)
 
         mock_scan.assert_any_call(['192.0.2.1'], utcnow)
         mock_scan.assert_any_call(['192.0.2.2'], utcnow)
-        self.assertEquals(mock_upload.call_count, 2)
+        self.assertEqual(self.inst.api.send_file.call_count, 2)
 
-        expected_contents = ''.join([json.dumps(s) + '\n'
-                                     for s in mock_scan.return_value])
-        self.assertEquals(len(actual_results), 2)
-        self.assertEquals(actual_results[0], expected_contents)
-        self.assertEquals(actual_results[1], expected_contents)
+        expected_contents = [
+            dumps(s, sort_keys=True) + '\n' for s in mock_scan.return_value
+        ]
+        expected_contents = ''.join(expected_contents)
+        self.assertEqual(len(actual_results), 2)
+        self.assertEqual(actual_results[0], expected_contents)
+        self.assertEqual(actual_results[1], expected_contents)
 
     @patch('ona_service.nmapper.MAX_SIMULTANEOUS_TARGETS', 1)
     @patch('ona_service.nmapper._run_scan', autospec=True)
-    @patch('ona_service.nmapper.NmapperService._upload_results', autospec=True)
-    def test_execute__no_results(self, mock_upload, mock_scan):
+    def test_execute__no_results(self, mock_scan):
         mock_scan.return_value = []
 
-        scanner = NmapperService()
-
         # mocking out _get_target_ips
-        scanner.api = MagicMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {
             'meta': {'total_count': 1},
@@ -190,10 +165,10 @@ class NmapperTest(TestCase):
                 }
             ]
         }
-        scanner.api.get_data.return_value = mock_response
+        self.inst.api.get_data.return_value = mock_response
 
-        scanner.execute()
+        self.inst.execute()
 
         mock_scan.assert_any_call(['192.0.2.1'], None)
         mock_scan.assert_any_call(['192.0.2.2'], None)
-        self.assertEquals(mock_upload.call_count, 0)
+        self.assertEqual(self.inst.api.call_count, 0)

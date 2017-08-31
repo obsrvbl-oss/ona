@@ -28,5 +28,6 @@ SEND_DELTA = timedelta(minutes=10)  # try to not overburden things
 def run_ossec_alert_log_watcher():
     LogWatcher(logs=WATCH_LOGS, send_delta=SEND_DELTA).run()
 
+
 if __name__ == '__main__':
     run_ossec_alert_log_watcher()

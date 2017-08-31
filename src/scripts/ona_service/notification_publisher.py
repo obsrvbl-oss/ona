@@ -14,9 +14,8 @@
 from __future__ import print_function, unicode_literals
 
 # python builtins
-import json
 from os import environ as os_environ
-from logging import getLogger, DEBUG, NullHandler, Formatter
+from logging import getLogger, DEBUG, Formatter
 from logging.handlers import SysLogHandler
 from socket import gethostname
 from time import gmtime, sleep
@@ -24,16 +23,20 @@ from time import gmtime, sleep
 # local
 from service import Service
 from snmp_handler import SnmpHandler, SNMP_TRAP_PORT, V2 as SNMPV2
-from utils import utc, utcnow
+from utils import utc, utcnow, persistent_dict
 
 logger = getLogger(__name__)
+
+ENV_NOTIFICATION_TYPES = 'OBSRVBL_NOTIFICATION_TYPES'
+DEFAULT_NOTIFICATION_TYPES = 'alerts observations'
 
 POST_PUBLISH_WAIT_SECONDS = 0.020
 UPDATE_INTERVAL_SECONDS = 60
 STATE_FILE = '.notifications.state'
 MESSAGE_MAP = {
-    'alerts': 'error',
-    'observations': 'info',
+    'alerts':  {'endpoint': 'alerts', 'priority': 'error'},
+    'observations': {'endpoint': 'observations', 'priority': 'info'},
+    'alerts-detail': {'endpoint': 'alert-notifications', 'priority': 'error'},
 }
 
 CONFIG_DEFAULTS = {
@@ -76,30 +79,6 @@ def _reload_config():
     _CONFIG.update(os_environ)
 
 
-class persistent_dict(dict):
-    def __init__(self, filename):
-        super(persistent_dict, self).__init__()
-        self.filename = filename
-        self._load()
-
-    def _load(self):
-        self.clear()
-        try:
-            with open(self.filename, 'r') as f:
-                self.update(json.load(f))
-        except (IOError, ValueError):
-            pass
-
-    def _save(self):
-        with open(self.filename, 'w') as f:
-            return json.dump(self, f)
-
-    def __setitem__(self, key, value):
-        res = super(persistent_dict, self).__setitem__(key, value)
-        self._save()
-        return res
-
-
 def create_logger():
     _reload_config()
 
@@ -113,8 +92,7 @@ def create_logger():
         log.addHandler(_snmp_log_handler(config))
     if config('syslog_enabled').lower() == 'true':
         log.addHandler(_syslog_log_handler(config, gethostname()))
-    if not log.handlers:
-        log.addHandler(NullHandler())
+
     return log
 
 
@@ -165,9 +143,14 @@ class NotificationPublisher(Service):
         self.state = persistent_dict(STATE_FILE)
         self.logger = create_logger()
 
-    def get_data(self, data_type, params):
+        notification_types = os_environ.get(
+            ENV_NOTIFICATION_TYPES, DEFAULT_NOTIFICATION_TYPES
+        )
+        self.notification_types = set(notification_types.split())
+
+    def get_data(self, endpoint, params):
         try:
-            result = self.api.get_data(data_type, params).json()
+            result = self.api.get_data(endpoint, params).json()
         except ValueError:
             return None
         if 'error' in result:
@@ -200,14 +183,23 @@ class NotificationPublisher(Service):
             sleep(POST_PUBLISH_WAIT_SECONDS)
 
     def execute(self, now=None):
-        for data_type, priority in MESSAGE_MAP.iteritems():
+        if not self.logger.handlers:
+            return
+
+        for data_type in self.notification_types:
+            if data_type not in MESSAGE_MAP:
+                continue
+
+            endpoint = MESSAGE_MAP[data_type]['endpoint']
+            priority = MESSAGE_MAP[data_type]['priority']
+
             try:
                 params = self.state[data_type]
             except KeyError:
                 params = {'time__gt': utcnow().replace(tzinfo=utc).isoformat()}
                 self.state[data_type] = params
 
-            messages = self.get_data(data_type, params)
+            messages = self.get_data(endpoint, params)
             if not messages:
                 continue
 

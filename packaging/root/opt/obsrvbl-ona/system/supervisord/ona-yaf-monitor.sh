@@ -16,9 +16,6 @@
 . /opt/obsrvbl-ona/config
 cd /opt/obsrvbl-ona/
 
-# Ensure log directory exists
-mkdir -p $PNA_LOGDIR
-
 # Bring up the interface
 /usr/bin/sudo /sbin/ifconfig $1 up promisc
 
@@ -27,9 +24,17 @@ export OBSRVBL_BPF="`/usr/bin/python2.7 -c "print ' or '.join('(net {})'.format(
 
 # Run the monitor
 exec /usr/bin/sudo \
-    /opt/obsrvbl-ona/pna/user/pna \
-        -i "$1" \
-        -N "$OBSRVBL_NETWORKS" \
-        -o "$PNA_LOGDIR" \
-        -Z "obsrvbl_ona" \
-        "$OBSRVBL_BPF"
+    /opt/yaf/bin/yaf \
+        --in="$1" \
+        --live="pcap" \
+        --out="localhost" \
+        --filter="$OBSRVBL_BPF" \
+        --ipfix="tcp" \
+        --ipfix-port="$2" \
+        --no-stats \
+        --idle-timeout="60" \
+        --active-timeout="120" \
+        --max-flows="100000" \
+        --silk \
+        --become-user="obsrvbl_ona" \
+        --loglevel="warning"

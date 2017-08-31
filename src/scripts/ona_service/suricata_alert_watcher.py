@@ -83,13 +83,14 @@ class SuricataAlertWatcher(Service):
                 file_path = _compress_log(file_path)
             path = self.api.send_file(DATA_TYPE, file_path, now,
                                       suffix=self.log_type)
-            data = {
-                'path': path,
-                'log_type': self.log_type,
-                'utcoffset': utcoffset(),
-                'ip': get_ip(),
-            }
-            self.api.send_signal(DATA_TYPE, data)
+            if path is not None:
+                data = {
+                    'path': path,
+                    'log_type': self.log_type,
+                    'utcoffset': utcoffset(),
+                    'ip': get_ip(),
+                }
+                self.api.send_signal(DATA_TYPE, data)
             os.remove(file_path)
 
     def _update_rules(self):
@@ -109,9 +110,11 @@ class SuricataAlertWatcher(Service):
         # we call utcnow() again to avoid the race condition where we miss
         # midnight.
         next_time = utcnow() + timedelta(seconds=UPDATE_INTERVAL_SECONDS)
-        need_ruleset_update = (now and next_time.date() > now.date())
-        if need_ruleset_update:
+        should_update = (now and next_time.date() > now.date())
+        if (not os.path.exists(SURICATA_RULE_PATH)) or should_update:
+            logging.info('Updating Suricata rules')
             self._update_rules()
+            logging.info('Finished updating Suricata rules')
 
 
 if __name__ == '__main__':

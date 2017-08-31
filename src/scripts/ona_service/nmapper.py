@@ -13,15 +13,13 @@
 # limitations under the License.
 
 # python builtins
-import json
 import logging
-from tempfile import NamedTemporaryFile
 from vendor.libnmap.process import NmapProcess
 from vendor.libnmap.parser import NmapParser, NmapParserException
 
 # local
 from service import Service
-from utils import utc
+from utils import send_observations, utc
 
 OBSERVATION_TYPE = 'scan_observation_v1'
 SCAN_TARGETS = 'scan-config'
@@ -43,17 +41,19 @@ def _run_scan(ips, now):
         logging.error("nmap parsing error? " + str(e))
         return
 
+    ret = []
     for host in report.hosts:
-        ports = ['{}/{}'.format(s.port, s.state)
-                 for s in host.services]
-        yield {
-            'observation_type': OBSERVATION_TYPE,
+        ports = ['{}/{}'.format(s.port, s.state) for s in host.services]
+        obs = {
             'time': now.isoformat(),
             'source': host.address,
             'ports': ', '.join(ports),
             'info_type': 'services',
             'result': '',
         }
+        ret.append(obs)
+
+    return ret
 
 
 class NmapperService(Service):
@@ -76,14 +76,6 @@ class NmapperService(Service):
         target_ips = objects[0].get('scan_targets', [])
         return target_ips
 
-    def _upload_results(self, filename, now):
-        path = self.api.send_file('logs', filename, now, suffix='nmap')
-        data = {
-            'path': path,
-            'log_type': 'observations',
-        }
-        self.api.send_signal('logs', data)
-
     def execute(self, now=None):
         logging.info('getting target ips')
         target_ips = self._get_target_ips()
@@ -97,15 +89,17 @@ class NmapperService(Service):
             ips = target_ips[0:MAX_SIMULTANEOUS_TARGETS]
             target_ips = target_ips[MAX_SIMULTANEOUS_TARGETS:]
 
-            results = _run_scan(ips, now)
-            with NamedTemporaryFile() as f:
-                if not results:
-                    continue
-                for r in results:
-                    f.write(json.dumps(r) + '\n')
+            obs_data = _run_scan(ips, now)
+            if not obs_data:
+                continue
 
-                f.seek(0)
-                self._upload_results(f.name, now)
+            send_observations(
+                api=self.api,
+                obs_type=OBSERVATION_TYPE,
+                obs_data=obs_data,
+                now=now,
+                suffix='nmap',
+            )
 
 
 if __name__ == '__main__':

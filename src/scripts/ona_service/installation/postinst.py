@@ -35,6 +35,7 @@ def main(system_type):
     system.set_user_group()
     system.set_owner()
     system.set_sudoer()
+    system.set_ona_name()
     system.install_services()
 
     try:
@@ -48,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument(
         'system_type',
         metavar='system_type',
-        help='Name of system class (e.g. UbuntuPrecise)'
+        help='Name of system class (e.g. UbuntuTrusty)'
     )
     args = parser.parse_args()
     main(args.system_type)

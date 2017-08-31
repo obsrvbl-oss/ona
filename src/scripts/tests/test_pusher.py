@@ -36,7 +36,7 @@ class PusherTestCase(TestCase):
 
     def test_send_sensor_data(self):
         self.inst.api.send_file.return_value = '/data_path'
-        self.inst.send_sensor_data(path='/some_path', whence=self.utcnow)
+        self.inst.send_sensor_data('/some_path', self.utcnow)
 
         # Did we send the file?
         self.inst.api.send_file.assert_called_once_with(
@@ -54,10 +54,10 @@ class PusherTestCase(TestCase):
         )
 
     def test_get_file_datetime(self):
-        # Netflow style
-        self.inst.file_fmt = 'nfcapd.%Y%m%d%H%M'
-        self.inst.prefix_len = 22
-        actual = self.inst._get_file_datetime('nfcapd.201403241411')
+        # IPFIX style
+        self.inst.file_fmt = '%Y%m%d%H%M'
+        self.inst.prefix_len = 12
+        actual = self.inst._get_file_datetime('201403241411')
         expected = datetime(2014, 3, 24, 14, 10, 0)
         self.assertEqual(actual, expected)
 
@@ -71,12 +71,12 @@ class PusherTestCase(TestCase):
 
 class PusherTestBase(object):
     """
-    Pusher child class tests (PNA, Netflow) inherit from this class.
+    Pusher child class tests (PNA, IPFIX) inherit from this class.
     """
-    def _get_instance(self, cls):
-        inst = cls(input_dir=join(gettempdir(), 'pusher_input'))
+    def _get_instance(self, cls, **kwargs):
+        inst = cls(input_dir=join(gettempdir(), 'pusher_input'), **kwargs)
         inst.api = MagicMock()
-        inst.api.hostname = 'foo'
+        inst.api.ona_name = 'foo'
         inst.send_sensor_data = MagicMock()
 
         return inst
@@ -88,18 +88,22 @@ class PusherTestBase(object):
         self.output_dir = self.inst.output_dir
         makedirs(self.output_dir)
 
-        self._touch_files()
-
     def tearDown(self):
         rmtree(self.input_dir, ignore_errors=True)
         rmtree(self.output_dir, ignore_errors=True)
 
     def test_execute(self):
-        self.inst.execute()
+        now = datetime(2014, 3, 24, 14, 20, 30, tzinfo=utc)
+        self._touch_files()
+        self.inst.execute(now)
 
         # Did the heartbeat go out?
         self.inst.api.send_signal.assert_called_once_with(
-            data_type='heartbeat', data={u'data_type': self.inst.data_type}
+            data_type='heartbeat',
+            data={
+                u'data_type': self.inst.data_type,
+                u'sensor_hb_time': '2014-03-24T14:20:30+00:00',
+            }
         )
 
         # Did the first group get deleted?
@@ -132,6 +136,7 @@ class PusherTestBase(object):
         self.assertItemsEqual(listdir(self.output_dir), [])
 
     def test_execute_no_delete(self):
+        self._touch_files()
         # If the sending failed...
         self.inst.send_sensor_data.return_value = False
         self.inst.execute()
@@ -148,8 +153,18 @@ class PusherTestBase(object):
         with tar_open(file_path, mode=self.tar_read_mode) as tarball:
             self.assertEqual(tarball.getnames(), self.ready[2:4])
 
+    @patch('ona_service.pusher.getsize', lambda x: 0)
+    def test_execute_truncated(self):
+        self._touch_files()
+        self.inst.execute()
+        # 0-length files should not attempt to send
+        self.assertEqual(self.inst.send_sensor_data.call_count, 0)
+        # They should also not be deleted
+        self.assertItemsEqual(listdir(self.output_dir), self.output)
+
     @patch('ona_service.pusher.remove', autospec=True)
     def test_execute_ioerror(self, mock_remove):
+        self._touch_files()
         # If we can't read one of the files...
         remove(join(self.input_dir, self.ready[0]))
         self.inst.execute()
@@ -160,6 +175,8 @@ class PusherTestBase(object):
             self.assertItemsEqual(tarball.getnames(), self.ready[1:2])
 
     def test_service(self):
+        self._touch_files()
+
         def killer(signum, frame):
             self.inst.stop()
 
@@ -167,3 +184,7 @@ class PusherTestBase(object):
         signal.signal(signal.SIGALRM, killer)
         signal.alarm(1)
         self.inst.run()
+
+    def test_data_type(self):
+        self._touch_files()
+        self.assertEqual(self.inst.data_type, self.data_type)

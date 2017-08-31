@@ -1,4 +1,4 @@
-#!/bin/sh -ex
+#!/bin/sh
 
 #  Copyright 2015 Observable Networks
 #
@@ -14,15 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-mkdir -p $OBSRVBL_NETFLOW_LOGDIR
+set -e
 
-ROTATE_PERIOD=60
+case "$1" in
+    abort-upgrade|abort-remove|abort-deconfigure|configure)
+    ;;
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
 
-export TZ='Etc/UTC'
 
-exec nfcapd \
-    -p $OBSRVBL_NETFLOW_PORT \
-    -l $OBSRVBL_NETFLOW_LOGDIR \
-    -t ${ROTATE_PERIOD}s \
-    -w \
-    -z
+/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/installation/postinst.py "UbuntuTrusty"

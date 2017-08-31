@@ -14,21 +14,27 @@
 from __future__ import print_function
 
 import time
+
 from datetime import datetime
+from json import dumps
 from os import environ, fsync, remove
 from os.path import exists, join
 from shutil import rmtree
 from tempfile import gettempdir, NamedTemporaryFile
 from unittest import TestCase
 
-from mock import patch
+from mock import call as MockCall, MagicMock, mock_open, patch
 
 from ona_service.utils import (
     CommandOutputFollower,
     create_dirs,
     get_ip,
+    utcnow,
     utcoffset,
     validate_pna_networks,
+    send_observations,
+    gzip_bytes,
+    gunzip_bytes,
 )
 
 
@@ -176,3 +182,64 @@ class ValidatePnaNetworksTestCase(TestCase):
         site_value = None
         actual = validate_pna_networks(site_value)
         self.assertEqual(actual, '')
+
+
+class SendObservationsTestCase(TestCase):
+    def test_basic(self):
+        api = MagicMock()
+        data_path = 'file:///tmp/path.ext'
+        api.send_file.return_value = data_path
+
+        now = utcnow()
+
+        m = mock_open()
+        mock_path = 'ona_service.utils.NamedTemporaryFile'
+        with patch(mock_path, m, create=True):
+            send_observations(
+                api=api,
+                obs_type='some_type_v1',
+                obs_data=[{'key': 'value'}, {'key': None}],
+                now=now,
+                suffix='some_suffix',
+            )
+
+        obs_1 = {'observation_type': 'some_type_v1', 'key': 'value'}
+        obs_2 = {'observation_type': 'some_type_v1', 'key': None}
+        m.return_value.write.assert_has_calls(
+            [
+                MockCall(dumps(obs_1, sort_keys=True).encode('utf-8')),
+                MockCall(b'\n'),
+                MockCall(dumps(obs_2, sort_keys=True).encode('utf-8')),
+                MockCall(b'\n'),
+            ]
+        )
+
+        self.assertEqual(api.send_file.call_count, 1)
+        self.assertEqual(api.send_file.call_args[0][0], 'logs')
+        self.assertEqual(api.send_file.call_args[0][2], now)
+        self.assertEqual(api.send_file.call_args[1]['suffix'], 'some_suffix')
+
+        data = {'path': data_path, 'log_type': 'observations'}
+        api.send_signal.assert_called_once_with('logs', data)
+
+    def test_empty(self):
+        api = MagicMock()
+        send_observations(api, 'some_type_v1', [], utcnow())
+        self.assertEqual(api.send_file.call_count, 0)
+        self.assertEqual(api.send_signal.call_count, 0)
+
+
+class GzipTestCase(TestCase):
+    def setUp(self):
+        self.data = b'Test data'
+        self.gz_data = (
+            b'\x1f\x8b\x08\x00M\x986W\x02\xff\x0bI-.QHI,I\x04\x00\x11,\xf9Q\t'
+            b'\x00\x00\x00'
+        )
+
+    def test_gunzip_bytes(self):
+        self.assertEqual(gunzip_bytes(self.gz_data), self.data)
+
+    def test_gzip_bytes(self):
+        gz_data = gzip_bytes(self.data)
+        self.assertEqual(gunzip_bytes(gz_data), self.data)

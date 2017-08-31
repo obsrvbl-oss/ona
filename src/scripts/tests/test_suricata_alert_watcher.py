@@ -40,6 +40,10 @@ def dummy_utcoffset():
     return 0
 
 
+def patch_path(suffix):
+    return 'ona_service.suricata_alert_watcher.{}'.format(suffix)
+
+
 class SuricataAlertWatcherTest(TestCase):
     def setUp(self):
         self.tempdir = mkdtemp()
@@ -47,7 +51,7 @@ class SuricataAlertWatcherTest(TestCase):
     def tearDown(self):
         rmtree(self.tempdir)
 
-    @patch('ona_service.suricata_alert_watcher.check_call', autospec=True)
+    @patch(patch_path('check_call'), autospec=True)
     def test_compress_log(self, mock_check_call):
         in_path = '/tmp/obsrvbl/eve.json.12345678.archived'
         out_path = '/tmp/obsrvbl/eve.json.12345678.archived.gz'
@@ -63,7 +67,7 @@ class SuricataAlertWatcherTest(TestCase):
         expected_call = 'gzip -f {}'.format(in_path).split(' ')
         mock_check_call.assert_called_with(expected_call)
 
-    @patch('ona_service.suricata_alert_watcher.check_output', autospec=True)
+    @patch(patch_path('check_output'), autospec=True)
     def test_rotate_logs(self, mock_check_output):
         watcher = SuricataAlertWatcher()
 
@@ -78,8 +82,8 @@ class SuricataAlertWatcherTest(TestCase):
         mock_check_output.side_effect = CalledProcessError(1, '')
         watcher._rotate_logs()
 
-    @patch('ona_service.suricata_alert_watcher.get_ip', dummy_get_ip)
-    @patch('ona_service.suricata_alert_watcher.utcoffset', dummy_utcoffset)
+    @patch(patch_path('get_ip'), dummy_get_ip)
+    @patch(patch_path('utcoffset'), dummy_utcoffset)
     def test_upload(self):
         file1 = self.tempdir + '/eve.json.foo.archived'
         file2 = self.tempdir + '/eve.json.bar.archived'
@@ -140,8 +144,8 @@ class SuricataAlertWatcherTest(TestCase):
         # Ensure that directory was cleaned up
         self.assertEqual(glob(path.join(self.tempdir, '*.*')), [])
 
-    @patch('ona_service.suricata_alert_watcher.get_ip', dummy_get_ip)
-    @patch('ona_service.suricata_alert_watcher.utcoffset', dummy_utcoffset)
+    @patch(patch_path('get_ip'), dummy_get_ip)
+    @patch(patch_path('utcoffset'), dummy_utcoffset)
     def test_upload_nothing(self):
         now = datetime(2015, 3, 12)
         watcher = SuricataAlertWatcher(log_dir=self.tempdir)
@@ -152,9 +156,9 @@ class SuricataAlertWatcherTest(TestCase):
         self.assertEquals(watcher.api.send_file.call_args_list, [])
         self.assertEquals(watcher.api.call_args_list, [])
 
-    @patch('ona_service.suricata_alert_watcher.get_ip', dummy_get_ip)
-    @patch('ona_service.suricata_alert_watcher.utcoffset', dummy_utcoffset)
-    @patch('ona_service.suricata_alert_watcher.check_output', autospec=True)
+    @patch(patch_path('get_ip'), dummy_get_ip)
+    @patch(patch_path('utcoffset'), dummy_utcoffset)
+    @patch(patch_path('check_output'), autospec=True)
     def test_rotate_then_upload(self, mock_check_output):
         logfile = self.tempdir + '/eve.json'
         with open(logfile, 'w'):
@@ -188,7 +192,7 @@ class SuricataAlertWatcherTest(TestCase):
             })
         ])
 
-    @patch('ona_service.suricata_alert_watcher.check_output', autospec=True)
+    @patch(patch_path('check_output'), autospec=True)
     def test_update_rules(self, mock_check_output):
         watcher = SuricataAlertWatcher(log_dir=self.tempdir)
         watcher.api = MagicMock()
@@ -208,12 +212,9 @@ class SuricataAlertWatcherTest(TestCase):
         )
         watcher.api.get_data.assert_called_once_with('suricata-rules')
 
-    @patch('ona_service.suricata_alert_watcher.SuricataAlertWatcher.'
-           '_rotate_logs', autospec=True)
-    @patch('ona_service.suricata_alert_watcher.SuricataAlertWatcher.'
-           '_upload', autospec=True)
-    @patch('ona_service.suricata_alert_watcher.SuricataAlertWatcher.'
-           '_update_rules', autospec=True)
+    @patch(patch_path('SuricataAlertWatcher._rotate_logs'), autospec=True)
+    @patch(patch_path('SuricataAlertWatcher._upload'), autospec=True)
+    @patch(patch_path('SuricataAlertWatcher._update_rules'), autospec=True)
     def test_execute(self, mock_rules, mock_upload, mock_rotate_logs):
         watcher = SuricataAlertWatcher()
 
@@ -224,15 +225,13 @@ class SuricataAlertWatcherTest(TestCase):
         mock_upload.assert_called_with(watcher, now, compress=True)
         mock_rules.assert_called_with(watcher)
 
-    @patch('ona_service.suricata_alert_watcher.utcnow', autospec=True)
-    @patch('ona_service.suricata_alert_watcher.SuricataAlertWatcher.'
-           '_rotate_logs', autospec=True)
-    @patch('ona_service.suricata_alert_watcher.SuricataAlertWatcher.'
-           '_upload', autospec=True)
-    @patch('ona_service.suricata_alert_watcher.SuricataAlertWatcher.'
-           '_update_rules', autospec=True)
-    def test_execute_no_rules(self, mock_rules, mock_upload, mock_rotate_logs,
-                              mock_utc):
+    @patch(patch_path('utcnow'), autospec=True)
+    @patch(patch_path('SuricataAlertWatcher._rotate_logs'), autospec=True)
+    @patch(patch_path('SuricataAlertWatcher._upload'), autospec=True)
+    @patch(patch_path('SuricataAlertWatcher._update_rules'), autospec=True)
+    def test_execute_no_rules(
+        self, mock_rules, mock_upload, mock_rotate_logs, mock_utc
+    ):
         now = datetime(2015, 1, 1)
         mock_utc.return_value = now
         watcher = SuricataAlertWatcher()
@@ -241,4 +240,4 @@ class SuricataAlertWatcherTest(TestCase):
 
         mock_rotate_logs.assert_called_with(watcher)
         mock_upload.assert_called_with(watcher, now, compress=True)
-        self.assertEquals(mock_rules.call_count, 0)
+        self.assertEquals(mock_rules.call_count, 1)

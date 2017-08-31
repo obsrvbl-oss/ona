@@ -20,7 +20,7 @@ from collections import defaultdict
 from datetime import datetime
 from glob import iglob
 from os import remove
-from os.path import basename, join
+from os.path import basename, getsize, join
 from tarfile import open as tar_open
 from tempfile import gettempdir
 
@@ -60,14 +60,19 @@ class Pusher(Service):
         self.input_dir = kwargs.pop('input_dir', None)
         self.output_dir = join(gettempdir(), self.data_type)
 
-    def send_heartbeat(self):
+    def send_heartbeat(self, dt=None):
         """
         Send a signal to the site to tell it we're here.
         """
-        data = {'data_type': self.data_type}
+        dt = dt or datetime.now(utc)
+        dt = dt.astimezone(utc) if dt.tzinfo else dt.replace(tzinfo=utc)
+        data = {
+            'data_type': self.data_type,
+            'sensor_hb_time': dt.isoformat(),
+        }
         self.api.send_signal(data_type='heartbeat', data=data)
 
-    def send_sensor_data(self, path, whence):
+    def send_sensor_data(self, path, dt):
         """
         Sends the sensor data, then signals the site about the data's
         arrival.
@@ -76,13 +81,14 @@ class Pusher(Service):
             path: input path where data to transfer is located
             whence: time that the data represents
         """
-        if whence.tzinfo:
-            whence = whence.astimezone(utc)
-        else:
-            whence = whence.replace(tzinfo=utc)
-        output_path = self.api.send_file(self.data_type, path, whence)
+        dt = dt.astimezone(utc) if dt.tzinfo else dt.replace(tzinfo=utc)
+
+        output_path = self.api.send_file(self.data_type, path, dt)
+        if output_path is None:
+            return False
+
         data = {
-            'timestamp': whence.isoformat(),
+            'timestamp': dt.isoformat(),
             'data_type': self.data_type,
             'data_path': output_path,
         }
@@ -120,7 +126,8 @@ class Pusher(Service):
 
             # Create the file archive
             prefix = format(key, self.file_fmt)
-            archive_name = '{}.{}'.format(prefix, self.api.hostname)
+            archive_name = '{}.{}'.format(prefix, self.api.ona_name)
+
             archive_path = join(self.output_dir, archive_name)
             logging.info('Creating archive %s', archive_name)
             self._archive_files(file_list, archive_path)
@@ -156,10 +163,18 @@ class Pusher(Service):
         removing what's been successfully sent.
         """
         for file_path in sorted(iglob(join(self.output_dir, '*'))):
+            # Skip any files that don't seem to match our format
             try:
                 whence = self._get_file_datetime(file_path)
             except ValueError:
                 continue
+
+            # Skip any files that have been truncated (this should be
+            # impossible, but you'd be surprised)
+            if getsize(file_path) == 0:
+                continue
+
+            # Send the files, removing those that have been transmitted
             if not self.send_sensor_data(file_path, whence):
                 logging.warning('Could not send %s', file_path)
                 continue
@@ -185,7 +200,7 @@ class Pusher(Service):
         logging.info('Pushing files from %s', self.input_dir)
 
         # Send a heartbeat to the site
-        self.send_heartbeat()
+        self.send_heartbeat(now)
 
         # Aggregate the file paths into 10-minute bins
         D_archive = self._get_file_bins()

@@ -15,6 +15,7 @@ from __future__ import division, print_function, unicode_literals
 
 from os.path import join
 from unittest import TestCase
+from uuid import uuid4
 
 from mock import call as MockCall, mock_open, patch
 
@@ -58,36 +59,24 @@ class BaseSystemTestCase(TestCase):
 
     @patch(PATCH_PATH.format('call'), autospec=True)
     def test_set_sudoer(self, mock_call):
-        # This is basically the function we're testing, but trust me: I typed
-        # it out a second time.
-        obsrvbl_user = system_tools.OBSRVBL_USER
-        obsrvbl_root = system_tools.OBSRVBL_ROOT
-
-        sudoers_path = join(obsrvbl_root, 'system', 'obsrvbl_ona.sudoers')
-        tmp_path = join(obsrvbl_root, 'system', 'sudoers.tmp')
-        command_list = (
-            'grep {} /etc/sudoers > /dev/null'.format(obsrvbl_user),
-            'cat /etc/sudoers {} > {}'.format(sudoers_path, tmp_path),
-            'visudo -c -f {}'.format(tmp_path),
-            'chown root:root {}'.format(tmp_path),
-            'chmod 0440 {}'.format(tmp_path),
-            'mv {} /etc/sudoers'.format(tmp_path),
+        sudoers_file_path = join(
+            system_tools.OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers'
         )
 
-        def side_effect(*args, **kwargs):
-            return 1 if args[0][0].startswith('grep') else 0
-
-        mock_call.side_effect = side_effect
-        self.base_system.set_sudoer()
-        expected_calls = [MockCall([x], shell=True) for x in command_list]
-        mock_call.assert_has_calls(expected_calls)
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    def test_set_sudoer_exists(self, mock_call):
-        # If the first call succeeds, ensure we bail out without further calls
+        # Success
         mock_call.return_value = 0
         self.base_system.set_sudoer()
-        self.assertEqual(mock_call.call_count, 1)
+        commands = [
+            'chown root {}'.format(sudoers_file_path),
+            'chmod 0400 {}'.format(sudoers_file_path),
+            'cp {} /etc/sudoers.d/obsrvbl_ona'.format(sudoers_file_path),
+        ]
+        mock_call.assert_has_calls([MockCall(x.split(' ')) for x in commands])
+
+        # Failure
+        mock_call.return_value = 1
+        with self.assertRaises(RuntimeError):
+            self.base_system.set_sudoer()
 
     @patch(PATCH_PATH.format('call'), autospec=True)
     def test_set_user_group(self, mock_call):
@@ -95,46 +84,64 @@ class BaseSystemTestCase(TestCase):
         command = 'usermod -a -G adm {}'.format(system_tools.OBSRVBL_USER)
         mock_call.assert_called_with(command.split(' '))
 
+    @patch(PATCH_PATH.format('node'), autospec=True)
+    def test_set_ona_name_default(self, mock_node):
+        mock_node.return_value = 'ona-0a1b2c'
+        open_ = mock_open()
+        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
+            self.base_system.set_ona_name()
+
+        self.assertEqual(mocked.call_count, 0)
+
+    @patch(PATCH_PATH.format('uuid4'), autospec=True)
+    @patch(PATCH_PATH.format('node'), autospec=True)
+    def test_set_ona_name_override(self, mock_node, mock_uuid4):
+        mock_node.return_value = 'default'
+
+        mock_uuid4.return_value = uuid4()
+        ona_name = mock_uuid4.return_value.hex[:6]
+
+        open_ = mock_open()
+        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
+            self.base_system.set_ona_name()
+
+        open_.assert_called_with(
+            system_tools.OBSRVBL_ROOT + 'config.local', 'a'
+        )
+        actual = mocked().write.call_args[0][0]
+        expected = 'OBSRVBL_ONA_NAME="ona-{}"\n'.format(ona_name)
+        self.assertEqual(actual, expected)
+
+    @patch(PATCH_PATH.format('node'), autospec=True)
+    def test_set_ona_name_no_override(self, mock_node):
+        mock_node.return_value = 'default'
+        open_ = mock_open()
+        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
+            mocked.return_value.__iter__.return_value = [
+                'OBSRVBL_ONA_NAME=ona-something\n'
+            ]
+            self.base_system.set_ona_name()
+
+        self.assertEqual(mocked().write.call_count, 0)
+
 
 class SystemdMixinTestCase(TestCase):
     def setUp(self):
-        # Create a class instance with the needed paths defined
-        self.systemd_service_dir = '/tmp/usr/lib/systemd/system'
-        self.systemd_startup_dir = '/tmp/etc/systemd/system'
-
-        class SystemdSystem(system_tools.SystemdMixin):
-            systemd_service_dir = self.systemd_service_dir
-            systemd_startup_dir = self.systemd_startup_dir
-
-        self.systemd_system = SystemdSystem()
+        self.systemd_system = system_tools.SystemdMixin()
 
     @patch(PATCH_PATH.format('call'), autospec=True)
-    @patch(PATCH_PATH.format('symlink'), autospec=True)
     @patch(PATCH_PATH.format('copy'), autospec=True)
-    @patch(PATCH_PATH.format('iglob'), autospec=True)
-    def test_install_services(
-        self, mock_iglob, mock_copy, mock_symlink, mock_call
-    ):
-        def _src(service):
-            return join(system_tools.OBSRVBL_ROOT, 'system/systemd', service)
-
-        def _dst(service):
-            return join(self.systemd_service_dir, service)
-
-        services = ['ona-test-service.service', 'obsrvbl-ona.service']
-        mock_iglob.return_value = [_src(x) for x in services]
-
+    def test_install_services(self, mock_copy, mock_call):
         self.systemd_system.install_services()
 
         # Make sure the right files were copied
-        actual = mock_copy.call_args_list
-        expected = [MockCall(_src(x), _dst(x)) for x in services]
-        self.assertEqual(actual, expected)
-
-        # Make sure the main service was symlinked
-        mock_symlink.assert_called_once_with(
-            _src('obsrvbl-ona.service'),
-            join(self.systemd_startup_dir, 'obsrvbl-ona.service')
+        mock_copy.assert_called_once_with(
+            join(
+                system_tools.OBSRVBL_ROOT,
+                'system/systemd',
+                'obsrvbl-ona.service',
+            ),
+            '/etc/systemd/system/obsrvbl-ona.service'
         )
 
         # Make sure the systemctl calls were correct
@@ -190,48 +197,6 @@ class SystemdMixinTestCase(TestCase):
         actual = self.systemd_system.stop_service(service_name, instance)
         expected = 241
         self.assertEqual(actual, expected)
-
-
-class SysVMixinTestCase(TestCase):
-    def setUp(self):
-        self.sysv_system = system_tools.SysVMixin()
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    @patch(PATCH_PATH.format('copy'), autospec=True)
-    def test_install_services(self, mock_copy, mock_call):
-        open_ = mock_open()
-        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
-            self.sysv_system.install_services()
-
-        # inittab setup
-        open_.assert_called_once_with('/etc/inittab', 'a')
-        expected_calls = [
-            MockCall(
-                'ON:345:respawn:'
-                '/bin/su -s /bin/sh -c '
-                '"/opt/obsrvbl-ona/system/supervisord/ona-supervisord.sh" '
-                'obsrvbl_ona'
-            ),
-            MockCall('\n'),
-        ]
-        mocked().write.assert_has_calls(expected_calls)
-
-        # init q
-        mock_call.assert_called_once_with('/sbin/init q'.split())
-
-    def test_start_service(self):
-        # Not implemented
-        self.sysv_system.start_service('some_service')
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    def test_stop_service(self, mock_call):
-        mock_call.return_value = 0
-        self.sysv_system.stop_service('some_service')
-        expected_calls = [
-            MockCall('sed -i s/ON:345.*//g /etc/inittab'.split()),
-            MockCall('/sbin/init q'.split()),
-        ]
-        mock_call.assert_has_calls(expected_calls)
 
 
 class UpstartTestCase(TestCase):
@@ -397,29 +362,42 @@ class RedHatMixinTestCase(TestCase):
         mock_call.assert_has_calls(expected_calls)
 
 
-class RHEL_5TestCase(TestCase):
+class SE2Linux_TestCase(TestCase):
     def setUp(self):
-        self.rhel_5 = system_tools.RHEL_5()
+        self.se_system = system_tools.SE2Linux()
 
     @patch(PATCH_PATH.format('call'), autospec=True)
-    @patch(PATCH_PATH.format('RHEL_5.get_users'), autospec=True)
-    def test_add_user(self, mock_get_users, mock_call):
-        user_name = system_tools.OBSRVBL_USER
-        # Try an already-existing user -> no calls
-        mock_get_users.return_value = {user_name, 'pcapaldi'}
-        self.rhel_5.add_user()
-        self.assertEqual(mock_call.call_count, 0)
+    def test_set_sudoer(self, mock_call):
+        # This is basically the function we're testing, but trust me: I typed
+        # it out a second time.
+        obsrvbl_user = system_tools.OBSRVBL_USER
+        obsrvbl_root = system_tools.OBSRVBL_ROOT
 
-        # No existing users -> add group and user
-        mock_get_users.return_value = {'dtennant', 'msmith', 'pcapaldi'}
-        self.rhel_5.add_user()
+        sudoers_path = join(obsrvbl_root, 'system', 'obsrvbl_ona.sudoers')
+        tmp_path = join(obsrvbl_root, 'system', 'sudoers.tmp')
+        command_list = (
+            'grep {} /etc/sudoers > /dev/null'.format(obsrvbl_user),
+            'cat /etc/sudoers {} > {}'.format(sudoers_path, tmp_path),
+            'visudo -c -f {}'.format(tmp_path),
+            'chown root:root {}'.format(tmp_path),
+            'chmod 0440 {}'.format(tmp_path),
+            'mv {} /etc/sudoers'.format(tmp_path),
+        )
 
-        addgroup_args = 'groupadd -f -r {}'.format(user_name).split(' ')
-        adduser_args = 'useradd -g {0} -d {1} -r -s /sbin/nologin {0}'.format(
-            user_name, system_tools.OBSRVBL_ROOT
-        ).split(' ')
-        expected_calls = [MockCall(addgroup_args), MockCall(adduser_args)]
+        def side_effect(*args, **kwargs):
+            return 1 if args[0][0].startswith('grep') else 0
+
+        mock_call.side_effect = side_effect
+        self.se_system.set_sudoer()
+        expected_calls = [MockCall([x], shell=True) for x in command_list]
         mock_call.assert_has_calls(expected_calls)
+
+    @patch(PATCH_PATH.format('call'), autospec=True)
+    def test_set_sudoer_exists(self, mock_call):
+        # If the first call succeeds, ensure we bail out without further calls
+        mock_call.return_value = 0
+        self.se_system.set_sudoer()
+        self.assertEqual(mock_call.call_count, 1)
 
 
 class FreeBSD_10_TestCase(TestCase):

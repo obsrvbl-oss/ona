@@ -86,9 +86,13 @@ class WatchNode(object):
                 f.writelines(self.data)
             f.flush()
             fsync(f.fileno())
+            remote_path = self.api.send_file(
+                DATA_TYPE, f.name, now, suffix=self.log_type
+            )
+
+        if remote_path is not None:
             data = {
-                'path': self.api.send_file(DATA_TYPE, f.name, now,
-                                           suffix=self.log_type),
+                'path': remote_path,
                 'log_type': self.log_type,
                 'utcoffset': utcoffset(),
                 'ip': get_ip(),
@@ -105,13 +109,14 @@ class LogNode(WatchNode):
     """
     Object to handle reading of a log file.
     """
-    def __init__(self, log_type, api, log_path):
+    def __init__(self, log_type, api, log_path, **kwargs):
         """
         Arguments:
             log_path: location of the log file
             log_type: name to give the log
             api: api for interacting with the proxy
         """
+        self.encoding = kwargs.pop('encoding', None)
         self.log_path = log_path
         self.log_file = None
         self.log_file_inode = None
@@ -120,8 +125,10 @@ class LogNode(WatchNode):
 
     def _set_fd(self, seek_to_end=False):
         try:
-            self.log_file = io.open(self.log_path, mode='r')
-        except IOError as err:
+            self.log_file = io.open(
+                self.log_path, mode='r', encoding=self.encoding
+            )
+        except (IOError, OSError) as err:
             logging.error('Could not open %s: %s', self.log_path, err)
             return
 
@@ -209,8 +216,13 @@ class StatNode(WatchNode):
         return percent_times
 
     def _virtual_memory(self):
-        """Emulate the .virtual_memory() call in later psutil."""
-        return dict(psutil.phymem_usage()._asdict())
+        # Smooth out differences in psutil versions: phymem_usage was replaced
+        try:
+            data = psutil.phymem_usage()
+        except AttributeError:
+            data = psutil.virtual_memory()
+
+        return dict(data._asdict())
 
     def _disk_usage(self, all=False):
         du = []
@@ -224,8 +236,14 @@ class StatNode(WatchNode):
         return du
 
     def _net_io_counters(self, pernic=False):
+        # Smooth out differences in psutil versions: network_io_counters was
+        # replaced
+        try:
+            nic_counters = psutil.network_io_counters(pernic=pernic)
+        except AttributeError:
+            nic_counters = psutil.net_io_counters(pernic=pernic)
+
         nic_stats = []
-        nic_counters = psutil.network_io_counters(pernic=pernic)
         for nic, counters in nic_counters.iteritems():
             stats = {'nic': nic}
             # psutil 0.4.1 does not capture drops/errors/etc. grab those

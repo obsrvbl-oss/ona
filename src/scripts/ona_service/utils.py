@@ -15,14 +15,18 @@ from __future__ import print_function, unicode_literals
 
 # python builtins
 import io
+import gzip
+import json
 import socket
 
+from calendar import timegm
 from datetime import datetime, timedelta, tzinfo
 from os import devnull, makedirs
 from Queue import Queue, Empty
 from socket import error as socket_error, inet_aton, inet_ntoa
 from struct import pack, unpack
 from subprocess import PIPE, Popen
+from tempfile import NamedTemporaryFile
 from threading import Event, Thread
 from time import mktime, sleep
 
@@ -40,6 +44,8 @@ class UTC(tzinfo):
 
     def dst(self, dt):
         return ZERO_DELTA
+
+
 utc = UTC()
 
 
@@ -266,3 +272,73 @@ def validate_pna_networks(site_value):
             output_list.append(normalized_string)
 
     return ' '.join(output_list)
+
+
+def send_observations(api, obs_type, obs_data, now, suffix=''):
+    """
+    Upload an observations file to the ON service.
+    `api` is an ON API object.
+    `obs_type` is a string with the name of the observation resource.
+    `obs_data` is an iterable of dicts with observation data.
+    `now` is a datetime object.
+    `suffix` is a string to be appended to the file name.
+    """
+    if not obs_data:
+        return
+
+    with NamedTemporaryFile() as f:
+        for obs in obs_data:
+            obs['observation_type'] = obs_type
+            obs_json = json.dumps(obs, sort_keys=True).encode('utf-8')
+            f.write(obs_json)
+            f.write(b'\n')
+
+        f.seek(0)
+        path = api.send_file('logs', f.name, now, suffix=suffix)
+
+    if path is not None:
+        data = {'path': path, 'log_type': 'observations'}
+        api.send_signal('logs', data)
+
+
+def timestamp(dt):
+    """Convert a date or datetime to a UNIX timestamp (integer)."""
+    return timegm(dt.utctimetuple())
+
+
+def gunzip_bytes(gz_bytes, *args, **kwargs):
+    with io.BytesIO(gz_bytes) as fd:
+        with gzip.GzipFile(fileobj=fd, mode='rb') as gz_fd:
+            return gz_fd.read()
+
+
+def gzip_bytes(raw_bytes, *args, **kwargs):
+    with io.BytesIO() as fd:
+        with gzip.GzipFile(fileobj=fd, mode='wb') as gz_fd:
+            gz_fd.write(raw_bytes)
+
+        return fd.getvalue()
+
+
+class persistent_dict(dict):
+    def __init__(self, filename):
+        super(persistent_dict, self).__init__()
+        self.filename = filename
+        self._load()
+
+    def _load(self):
+        self.clear()
+        try:
+            with open(self.filename, 'r') as f:
+                self.update(json.load(f))
+        except (IOError, ValueError):
+            pass
+
+    def _save(self):
+        with open(self.filename, 'w') as f:
+            return json.dump(self, f)
+
+    def __setitem__(self, key, value):
+        res = super(persistent_dict, self).__setitem__(key, value)
+        self._save()
+        return res

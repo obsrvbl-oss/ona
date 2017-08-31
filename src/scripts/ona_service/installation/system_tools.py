@@ -15,14 +15,16 @@ from __future__ import division, print_function, unicode_literals
 
 from glob import iglob
 from io import open
-from os import symlink
 from os.path import basename, join
+from platform import node
 from shutil import copy
 from subprocess import call
+from uuid import uuid4
 
 OBSRVBL_ROOT = '/opt/obsrvbl-ona/'
 OBSRVBL_USER = 'obsrvbl_ona'
 OBSRVBL_SERVICE = 'obsrvbl-ona'
+ONA_NAME_PREFIX = 'ona-'
 
 
 class BaseSystem(object):
@@ -81,40 +83,40 @@ class BaseSystem(object):
     def set_sudoer(self):
         """
         Allows the ONA user to execute certain commands as root, sans password.
-        This is crazy dangerous, so we use visudo to ensure that the changes we
-        make are valid.
+        Raises RuntimeError if something fails
         """
-        # Step 0: Check to see if the obsrvbl_ona entries are already present
-        command = 'grep {} {} > /dev/null'.format(
-            OBSRVBL_USER, self.sudoers_path
-        )
-        return_code = call([command], shell=True)
-        if return_code == 0:
-            print(
-                '{} is already in {}'.format(OBSRVBL_USER, self.sudoers_path)
-            )
+        sudoers_file_path = join(OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers')
+        for args in (
+            ['chown', 'root', sudoers_file_path],
+            ['chmod', '0400', sudoers_file_path],
+            ['cp', sudoers_file_path, '/etc/sudoers.d/obsrvbl_ona']
+        ):
+            return_code = call(args)
+            if return_code != 0:
+                raise RuntimeError('Failed during: {}'.format(' '.join(args)))
+
+    def set_ona_name(self):
+        """
+        Write an identifier for the ONA to the local configuration file.
+        """
+        # If the hostname has already been set to something unqiue-ish
+        # after the OS was installed, don't change anything.
+        hostname = node()
+        if hostname.startswith(ONA_NAME_PREFIX):
             return
 
-        # Step 1: Concatenate the original file and our additions to a
-        # new file.
-        # Step 2: Use visudo to check that the new file is valid.
-        # Step 3: Verify that the new file is owned by the root user and group
-        # Step 4: Set the new file's read/write/execute permissions to 0440
-        # Step 5: Replace the original file
-        src_path = join(OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers')
-        tmp_path = join(OBSRVBL_ROOT, 'system', 'sudoers.tmp')
-        for command in (
-            'cat {} {} > {}'.format(self.sudoers_path, src_path, tmp_path),
-            'visudo -c -f {}'.format(tmp_path),
-            'chown root:{} {}'.format(self.admin_group, tmp_path),
-            'chmod 0440 {}'.format(tmp_path),
-            'mv {} {}'.format(tmp_path, self.sudoers_path),
-        ):
-            return_code = call([command], shell=True)
+        config_local_path = join(OBSRVBL_ROOT, 'config.local')
 
-            if return_code != 0:
-                print('Failed during: {}'.format(command))
+        # If the identifier has already been set by configuration, don't
+        # change anything.
+        with open(config_local_path, 'r') as infile:
+            if any(line.startswith('OBSRVBL_ONA_NAME=') for line in infile):
                 return
+
+        # Otherwise, set a value to be used instead of the hostname.
+        ona_name = ONA_NAME_PREFIX + uuid4().hex[:6]
+        with open(config_local_path, 'a') as outfile:
+            outfile.write('OBSRVBL_ONA_NAME="{}"\n'.format(ona_name))
 
     def start_service(self, service_name, instance=None):
         """
@@ -138,14 +140,6 @@ class BaseSystem(object):
 # Init system mixins
 
 class SystemdMixin(BaseSystem):
-    @property
-    def systemd_service_dir(self):
-        raise NotImplementedError
-
-    @property
-    def systemd_startup_dir(self):
-        raise NotImplementedError
-
     def _get_service_name(self, service_name, instance=None):
         """
         Appends ".service" to `service_name` if `instance` is None.
@@ -168,20 +162,11 @@ class SystemdMixin(BaseSystem):
         return call(['sudo', 'systemctl', action, service_name])
 
     def install_services(self):
-        # Copy the service files to the systemd service directory
-        pattern = join(OBSRVBL_ROOT, 'system/systemd/*.service')
-        for src_path in iglob(pattern):
-            dst_path = join(self.systemd_service_dir, basename(src_path))
-            copy(src_path, dst_path)
-
-        # Symlink the ONA service file to the startup directory
-        link_source = join(
-            OBSRVBL_ROOT, 'system/systemd/{}.service'.format(OBSRVBL_SERVICE)
-        )
-        link_name = join(
-            self.systemd_startup_dir, '{}.service'.format(OBSRVBL_SERVICE)
-        )
-        symlink(link_source, link_name)
+        # Copy the ONA service file to the startup directory
+        service_name = '{}.service'.format(OBSRVBL_SERVICE)
+        src_path = join(OBSRVBL_ROOT, 'system/systemd', service_name)
+        dst_path = join('/etc/systemd/system/', service_name)
+        copy(src_path, dst_path)
 
         # Register the main ONA service
         call(['systemctl', 'daemon-reload'])
@@ -202,39 +187,6 @@ class SystemdMixin(BaseSystem):
         return_code = self._systemctl('stop', service_name)
 
         return return_code
-
-
-class SysVMixin(BaseSystem):
-    def install_services(self):
-        # Keep Supervisor running
-        script_path = join(
-            OBSRVBL_ROOT, 'system/supervisord', 'ona-supervisord.sh'
-        )
-        command = '/bin/su -s /bin/sh -c "{}" {}'.format(
-            script_path, OBSRVBL_USER
-        )
-        inittab_line = 'ON:345:respawn:{}'.format(command)
-
-        with open('/etc/inittab', 'a') as outfile:
-            print(inittab_line, file=outfile)
-
-        # Start the service for the first time
-        call(['/sbin/init', 'q'])
-
-    def start_service(self, service_name, instance=None):
-        # Not implemented
-        pass
-
-    def stop_service(self, service_name, instance=None):
-        for args in (
-            ['sed', '-i', 's/ON:345.*//g', '/etc/inittab'],
-            ['/sbin/init', 'q'],
-        ):
-            return_code = call(args)
-
-            if return_code != 0:
-                print('Failed during: {}'.format(' '.join(args)))
-                return
 
 
 class UpstartMixin(BaseSystem):
@@ -345,37 +297,10 @@ class RedHatMixin(BaseSystem):
 
 # Specific release classes
 
-class RaspbianWheezyUpstart(UpstartMixin, DebianMixin, BaseSystem):
+class RaspbianJessie(SystemdMixin, DebianMixin, BaseSystem):
     """
-    Supports the 2015-02-16 version of Raspbian (based on Debian Wheezy)
-    if and only if the `upstart` package is installed and has replaced
-    SysVinit.
+    Supports the  2016-03-18 version of Raspbian (based on Debian Jessie).
     """
-
-
-class RHEL_5(SysVMixin, BaseSystem):
-    """
-    Supports Red Hat Enterprise Linux 5-compatible distributions, including
-    CentOS 5 and Scientific Linux 5. Not compatible with later versions, which
-    do not use SysV init.
-    """
-    def add_user(self):
-        # Don't create a user that already exists
-        if OBSRVBL_USER in self.get_users():
-            return
-
-        # Create the system group
-        call(['groupadd', '-f', '-r', OBSRVBL_USER])
-
-        args = [
-            'useradd',
-            '-g',  OBSRVBL_USER,  # Assign to the system group
-            '-d',  OBSRVBL_ROOT,  # Assign a home directory
-            '-r',  # System user
-            '-s', '/sbin/nologin',  # No shell access allowed
-            OBSRVBL_USER
-        ]
-        call(args)
 
 
 class RHEL_6(UpstartMixin, RedHatMixin, BaseSystem):
@@ -393,32 +318,62 @@ class RHEL_7(SystemdMixin, RedHatMixin, BaseSystem):
     CentOS 7 and Scientific Linux 7. Not compatible with earlier versions,
     which do not use systemd.
     """
-    systemd_service_dir = '/usr/lib/systemd/system'
-    systemd_startup_dir = '/etc/systemd/system'
 
 
 class SE2Linux(SystemdMixin, BusyBoxMixin, BaseSystem):
     """
     SE2Linux for embedded systems.
     """
-    systemd_service_dir = '/usr/lib/systemd/system'
-    systemd_startup_dir = '/etc/systemd/system'
+
+    def set_sudoer(self):
+        """
+        Allows the ONA user to execute certain commands as root, sans password.
+        This is crazy dangerous, so we use visudo to ensure that the changes we
+        make are valid.
+        """
+        # Step 0: Check to see if the obsrvbl_ona entries are already present
+        command = 'grep {} {} > /dev/null'.format(
+            OBSRVBL_USER, self.sudoers_path
+        )
+        return_code = call([command], shell=True)
+        if return_code == 0:
+            print(
+                '{} is already in {}'.format(OBSRVBL_USER, self.sudoers_path)
+            )
+            return
+
+        # Step 1: Concatenate the original file and our additions to a
+        # new file.
+        # Step 2: Use visudo to check that the new file is valid.
+        # Step 3: Verify that the new file is owned by the root user and group
+        # Step 4: Set the new file's read/write/execute permissions to 0440
+        # Step 5: Replace the original file
+        src_path = join(OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers')
+        tmp_path = join(OBSRVBL_ROOT, 'system', 'sudoers.tmp')
+        for command in (
+            'cat {} {} > {}'.format(self.sudoers_path, src_path, tmp_path),
+            'visudo -c -f {}'.format(tmp_path),
+            'chown root:{} {}'.format(self.admin_group, tmp_path),
+            'chmod 0440 {}'.format(tmp_path),
+            'mv {} {}'.format(tmp_path, self.sudoers_path),
+        ):
+            return_code = call([command], shell=True)
+
+            if return_code != 0:
+                print('Failed during: {}'.format(command))
+                return
 
 
-class UbuntuPrecise(UpstartMixin, DebianMixin, BaseSystem):
+class UbuntuTrusty(UpstartMixin, DebianMixin, BaseSystem):
     """
-    Supports Ubuntu installations with the upstart init system, default
-    from Precise (12.04) to Utopic (14.10).
+    Supports Ubuntu installations with the upstart init system.
     """
 
 
-class UbuntuVivid(SystemdMixin, DebianMixin, BaseSystem):
+class UbuntuXenial(SystemdMixin, DebianMixin, BaseSystem):
     """
-    Supports Ubuntu installations with the systemd init system, default
-    from Vivid (15.04). systemd is optionally available in Utopic (14.10).
+    Supports Ubuntu installations with the systemd init system.
     """
-    systemd_service_dir = '/lib/systemd/system'
-    systemd_startup_dir = '/etc/systemd/system'
 
 
 class FreeBSD_10(BaseSystem):

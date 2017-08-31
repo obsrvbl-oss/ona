@@ -1,18 +1,12 @@
+#!/bin/sh
 
-Welcome to the Observable Network Appliance ("ONA")!  This machine will
-automatically attempt to establish a continuous connection with
-sensor.ext.obsrvbl.com.  After downloading the latest Observable
-software, this machine will continually push collected network data to the
-Observable cloud for analysis.
+cat << EOF
 
-This machine should have at least two network interfaces.  The default,
-management interface, should be internet accessible.  The other(s) should
-be connected to the SPAN port(s) on your switch(es).
+This machine is an Observable Networks Sensor.
 
-Please use the web portal (<your-org>.obsrvbl.com) to monitor/configure this
-ONA.
+It should have at least two network interfaces:
+* The default interface should have Internet access for management traffic
+* The other(s) should be connected to mirror / SPAN ports on a switch / router
 
-Other notes:
-  - For extra security, this machine has a firewall on all ports.
-  - This machine has been assigned a random hostname, which is important
-    when running in a multi-sensor configuration.
+Use the web portal (<your-org>.obsrvbl.com) to manage this sensor.
+EOF

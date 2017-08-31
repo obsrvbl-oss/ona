@@ -35,16 +35,6 @@ OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 PNA_LOGDIR="/opt/obsrvbl-ona/logs/pna"
 
 ##
-# netflow-monitor
-##
-OBSRVBL_NETFLOW_SERVICE="false"
-
-# Location to buffer netflow files before transfer
-OBSRVBL_NETFLOW_LOGDIR="/opt/obsrvbl-ona/logs/netflow"
-
-OBSRVBL_NETFLOW_PORT="9995"
-
-##
 # log-watcher
 ##
 OBSRVBL_LOG_WATCHER="true"
@@ -53,29 +43,23 @@ OBSRVBL_LOG_WATCHER="true"
 # hostname-resolver
 ##
 OBSRVBL_HOSTNAME_RESOLVER="true"
+OBSRVBL_HOSTNAME_DNS="true"
+OBSRVBL_HOSTNAME_NETBIOS="false"
 
 ##
 # notification-publisher
 ##
 OBSRVBL_NOTIFICATION_PUBLISHER="true"
+OBSRVBL_NOTIFICATION_TYPES="alerts-detail"
 
 ##
 # pdns-capturer
 ##
 OBSRVBL_PDNS_CAPTURER="true"
-OBSRVBL_PDNS_PCAP_DIR="obsrvbl_pdns"
+OBSRVBL_PDNS_PCAP_DIR="/opt/obsrvbl-ona/logs/pdns"
 OBSRVBL_PDNS_CAPTURE_IFACE="any"
 OBSRVBL_PDNS_CAPTURE_SECONDS="600"
 OBSRVBL_PDNS_PPS_LIMIT="100"
-
-##
-# arp-capturer
-##
-OBSRVBL_ARP_CAPTURER="false"
-OBSRVBL_ARP_PCAP_DIR="obsrvbl_arp"
-OBSRVBL_ARP_CAPTURE_IFACE="any"
-OBSRVBL_ARP_CAPTURE_SECONDS="600"
-OBSRVBL_ARP_PPS_LIMIT="100"
 
 ##
 # ona-ossec-alert-watcher
@@ -92,6 +76,70 @@ OBSRVBL_SERVICE_SURICATA="false"
 # ona-nmapper
 ##
 OBSRVBL_NMAPPER="false"
+
+##
+# YAF, IPFIX, Netflow
+##
+OBSRVBL_YAF_CAPTURER="false"
+OBSRVBL_IPFIX_CAPTURER="false"
+OBSRVBL_IPFIX_LOGDIR="/opt/obsrvbl-ona/logs/ipfix"
+OBSRVBL_IPFIX_CONF="/opt/obsrvbl-ona/ipfix/sensor.conf"
+
+# NetFlow v5 exporter
+# OBSRVBL_IPFIX_PROBE_0_TYPE="netflow-v5"
+# OBSRVBL_IPFIX_PROBE_0_PORT="2055"
+
+# Standard NetFlow v9 exporter
+# OBSRVBL_IPFIX_PROBE_1_TYPE="netflow-v9"
+# OBSRVBL_IPFIX_PROBE_1_PORT="9995"
+
+# IPFIX exporter
+# OBSRVBL_IPFIX_PROBE_2_TYPE="ipfix"
+# OBSRVBL_IPFIX_PROBE_2_PORT="9996"
+
+# Cisco ASA exporter
+# OBSRVBL_IPFIX_PROBE_3_TYPE="netflow-v9"
+# OBSRVBL_IPFIX_PROBE_3_PORT="9997"
+# OBSRVBL_IPFIX_PROBE_3_SOURCE="asa"
+
+# Meraki exporter
+# OBSRVBL_IPFIX_PROBE_4_TYPE="netflow-v9"
+# OBSRVBL_IPFIX_PROBE_4_PORT="9998"
+# OBSRVBL_IPFIX_PROBE_4_SOURCE="meraki"
+
+# SonicWALL exporter
+# OBSRVBL_IPFIX_PROBE_5_TYPE="netflow-v9"
+# OBSRVBL_IPFIX_PROBE_5_PORT="9999"
+# OBSRVBL_IPFIX_PROBE_5_SOURCE="sonicwall"
+
+# sFlow exporter
+# OBSRVBL_IPFIX_PROBE_6_TYPE="sflow"
+# OBSRVBL_IPFIX_PROBE_6_PORT="6343"
+
+##
+# ona-share-watcher
+##
+OBSRVBL_SHARE_WATCHER="false"
+OBSRVBL_SHARE_DIR="/opt/obsrvbl-ona/share/"
+OBSRVBL_SHARE_WORKGROUP="WORKGROUP"
+
+# If monitoring a remote share set the read-only flag to true
+# Also specify the IP address of the share's host
+OBSRVBL_SHARE_FILE="README.txt"
+OBSRVBL_SHARE_READ_ONLY="false"
+OBSRVBL_SHARE_IP="127.0.0.1"
+
+##
+# ona-syslog-ad-watcher
+##
+OBSRVBL_SYSLOG_AD_WATCHER="false"
+
+##
+# ona-check-point-pusher
+##
+OBSRVBL_CHECK_POINT_PUSHER="false"
+OBSRVBL_CHECK_POINT_LOGDIR="/opt/obsrvbl-ona/logs/check_point"
+OBSRVBL_CHECK_POINT_PATH="/var/log/check-point-fw.log"
 
 # load up auto and local config
 [ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO

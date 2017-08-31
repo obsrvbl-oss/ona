@@ -13,7 +13,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+. /opt/obsrvbl-ona/config
+cd /opt/obsrvbl-ona/
 
-set -e
+# Ensure log directory exists
+mkdir -p $OBSRVBL_PDNS_PCAP_DIR
 
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/installation/postinst.py "RHEL_5"
+# Wait until the next interval
+sleep `expr $OBSRVBL_PDNS_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_PDNS_CAPTURE_SECONDS`
+
+# Run the monitor
+exec /usr/bin/sudo \
+    /usr/sbin/tcpdump \
+        -w "$OBSRVBL_PDNS_PCAP_DIR/pdns_%s.pcap" \
+        -i "$OBSRVBL_PDNS_CAPTURE_IFACE" \
+        -s 0 \
+        -c `expr $OBSRVBL_PDNS_CAPTURE_SECONDS \* $OBSRVBL_PDNS_PPS_LIMIT` \
+        -G "$OBSRVBL_PDNS_CAPTURE_SECONDS" \
+        -U \
+        -Z "obsrvbl_ona" \
+        "ip and udp src port 53"

@@ -18,6 +18,8 @@ import io
 from ConfigParser import RawConfigParser
 from os import getenv
 
+from flowcap_config import ENV_YAF_START_PORT, DEFAULT_YAF_START_PORT
+
 INFILE_PATH = '/opt/obsrvbl-ona/system/supervisord/ona-supervisord.base'
 OUTFILE_PATH = '/opt/obsrvbl-ona/system/supervisord/ona-supervisord.conf'
 
@@ -59,12 +61,6 @@ PROGRAM_COMMANDS = {
     'ona-log-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/log_watcher.py'
     ],
-    'ona-netflow-monitor': [
-        '/opt/obsrvbl-ona/netflow/netflow-monitor.sh'
-    ],
-    'ona-netflow-pusher': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/netflow_pusher.py'
-    ],
     'ona-notification-publisher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/notification_publisher.py'
     ],
@@ -77,14 +73,11 @@ PROGRAM_COMMANDS = {
     'ona-pna-pusher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/pna_pusher.py'
     ],
-    'ona-arp-capturer': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/arp_capturer.py'
+    'ona-pdns-monitor': [
+        '/opt/obsrvbl-ona/system/supervisord/ona-pdns-monitor.sh'
     ],
-    'ona-iec61850-capturer': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/iec61850_capturer.py'
-    ],
-    'ona-pdns-capturer': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/pdns_capturer.py'
+    'ona-pdns-pusher': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/pdns_pusher.py'
     ],
     'ona-suricata-alert-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/suricata_alert_watcher.py'
@@ -92,19 +85,38 @@ PROGRAM_COMMANDS = {
     'ona-nmapper': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/nmapper.py'
     ],
+    'ona-share-watcher': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/share_watcher.py'
+    ],
+    'ona-ipfix-pusher': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/ipfix_pusher.py'
+    ],
+    'ona-ipfix-monitor': [
+        '/opt/obsrvbl-ona/ipfix/flowcap.sh'
+    ],
+    'ona-yaf-monitor': [
+        '/opt/obsrvbl-ona/system/supervisord/ona-yaf-monitor.sh'
+    ],
+    'ona-syslog-ad-watcher': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/syslog_ad_watcher.py'
+    ],
+    'ona-check-point-pusher': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/check_point_pusher.py'
+    ],
 }
 
 ENABLE_FLAGS = [
-    ('OBSRVBL_NETFLOW_SERVICE', ['ona-netflow-monitor', 'ona-netflow-pusher']),
     ('OBSRVBL_HOSTNAME_RESOLVER', ['ona-hostname-resolver']),
     ('OBSRVBL_NOTIFICATION_PUBLISHER', ['ona-notification-publisher']),
-    ('OBSRVBL_ARP_CAPTURER', ['ona-arp-capturer']),
-    ('OBSRVBL_IEC61850_CAPTURER', ['ona-iec61850-capturer']),
-    ('OBSRVBL_PDNS_CAPTURER', ['ona-pdns-capturer']),
+    ('OBSRVBL_PDNS_CAPTURER', ['ona-pdns-monitor', 'ona-pdns-pusher']),
     ('OBSRVBL_SERVICE_OSSEC', ['ona-ossec-alert-watcher']),
     ('OBSRVBL_SERVICE_SURICATA', ['ona-suricata-alert-watcher']),
     ('OBSRVBL_LOG_WATCHER', ['ona-log-watcher']),
     ('OBSRVBL_NMAPPER', ['ona-nmapper']),
+    ('OBSRVBL_SHARE_WATCHER', ['ona-share-watcher']),
+    ('OBSRVBL_IPFIX_CAPTURER', ['ona-ipfix-monitor', 'ona-ipfix-pusher']),
+    ('OBSRVBL_SYSLOG_AD_WATCHER', ['ona-syslog-ad-watcher']),
+    ('OBSRVBL_CHECK_POINT_PUSHER', ['ona-check-point-pusher']),
 ]
 
 
@@ -115,9 +127,14 @@ class SupervisorConfig(object):
 
         self.config = RawConfigParser()
         self.config.read(self.infile_path)
+        self.program_set = set()
 
     def add_program(self, service_name, extra_args=None):
+        # Ensure that duplicate programs do not get added
         extra_args = [] if extra_args is None else extra_args[:]
+        if (service_name, tuple(extra_args)) in self.program_set:
+            return
+        self.program_set.add((service_name, tuple(extra_args)))
 
         section_name = 'program:{}'.format(service_name)
         if extra_args:
@@ -125,7 +142,7 @@ class SupervisorConfig(object):
         self.config.add_section(section_name)
 
         command_args = PROGRAM_COMMANDS[service_name] + extra_args
-        command_string = ' '.join(command_args)
+        command_string = ' '.join('"{}"'.format(x) for x in command_args)
         self.config.set(section_name, 'command', command_string)
 
         if service_name in PROGRAM_PARAMETERS:
@@ -139,11 +156,29 @@ class SupervisorConfig(object):
             )
 
     def update(self):
+        # Interfaces for PNA and YAF
+        all_ifaces = sorted(getenv('OBSRVBL_PNA_IFACES', '').split())
+
         # PNA services (one monitor per interface and one pusher)
         if getenv('OBSRVBL_PNA_SERVICE', 'false') == 'true':
-            for iface in getenv('OBSRVBL_PNA_IFACES', '').split():
+            for iface in all_ifaces:
                 self.add_program('ona-pna-monitor', extra_args=[iface])
             self.add_program('ona-pna-pusher')
+
+        # YAF services (one monitor per interface, one IPFIX receiver, and one
+        # pusher)
+        if getenv('OBSRVBL_YAF_CAPTURER', 'false') == 'true':
+            self.add_program('ona-ipfix-monitor')
+
+            yaf_start_port = int(
+                getenv(ENV_YAF_START_PORT, DEFAULT_YAF_START_PORT)
+            )
+            for i, iface in enumerate(all_ifaces):
+                yaf_port = '{}'.format(yaf_start_port + i)
+                self.add_program(
+                    'ona-yaf-monitor', extra_args=[iface, yaf_port]
+                )
+            self.add_program('ona-ipfix-pusher')
 
         # All other services
         for flag, program_list in ENABLE_FLAGS:

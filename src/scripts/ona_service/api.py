@@ -18,6 +18,7 @@ import io
 import logging
 import platform
 
+from httplib import REQUEST_ENTITY_TOO_LARGE
 from os import getenv
 
 # third-party
@@ -35,11 +36,12 @@ urllib3_logger = logging.getLogger('vendor.requests.packages.urllib3')
 urllib3_logger.setLevel(logging.ERROR)
 
 # Requests setup: Wait HTTP_TIMEOUT seconds before timing out.
-HTTP_TIMEOUT = 10.0
+HTTP_TIMEOUT = 300.0
 
 ENV_OBSRVBL_HOST = 'OBSRVBL_HOST'
 DEFAULT_OBSRVBL_HOST = 'https://sensor.ext.obsrvbl.com'
 ENV_OBSRVBL_SERVICE_KEY = 'OBSRVBL_SERVICE_KEY'
+ENV_OBSRVBL_ONA_NAME = 'OBSRVBL_ONA_NAME'
 
 
 # Retrying setup: Wait min(BACKOFF_FACTOR * (2 ** i), BACKOFF_MAX) msec between
@@ -86,7 +88,7 @@ class Api(object):
         service_key = getenv(ENV_OBSRVBL_SERVICE_KEY, None)
         if service_key:
             self.request_args['auth'] = ('service_key', service_key)
-        self.hostname = platform.node()
+        self.ona_name = getenv(ENV_OBSRVBL_ONA_NAME, platform.node())
 
     @retry(**retry_kwargs)
     def send_file(self, data_type, path, now, suffix=None):
@@ -99,9 +101,9 @@ class Api(object):
             now: the time period that corresponds to the file.
         """
         if suffix:
-            name = '{}_{}'.format(self.hostname, suffix)
+            name = '{}_{}'.format(self.ona_name, suffix)
         else:
-            name = self.hostname
+            name = self.ona_name
         url = '{server}/sign/{type}/{year}/{month}/{day}/{time}/{name}'
         url = url.format(
             server=self.proxy_uri, type=data_type, year=now.year,
@@ -124,8 +126,19 @@ class Api(object):
 
         with io.open(path, mode='rb') as data:
             logging.info('Sending file: {} {}'.format(method, url))
-            resp = requests.request(method, url, headers=headers, data=data,
-                                    verify=True, timeout=HTTP_TIMEOUT)
+            resp = requests.request(
+                method,
+                url,
+                headers=headers,
+                data=data,
+                verify=True,
+                timeout=HTTP_TIMEOUT,
+            )
+
+        if resp.status_code == REQUEST_ENTITY_TOO_LARGE:
+            logging.error('requests error: payload too large')
+            return None
+
         resp.raise_for_status()
         return remote_path
 
@@ -140,7 +153,7 @@ class Api(object):
         """
         url = '{server}/signal/{type}/{host}'
         url = url.format(
-            server=self.proxy_uri, type=data_type, host=self.hostname)
+            server=self.proxy_uri, type=data_type, host=self.ona_name)
         logging.info('Sending process signal: {}:{}'.format(url, data))
         response = requests.post(url, data=data, **self.request_args)
         response.raise_for_status()
@@ -155,7 +168,7 @@ class Api(object):
 
         Args:
             data_url: resource we should fetch. This should be either
-                `data_type`, or a "`data_type`/`hostname`" string.
+                `data_type`, or a "`data_type`/`ona_name`" string.
             params: optional query params to send
 
         Returns:

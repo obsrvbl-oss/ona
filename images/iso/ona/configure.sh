@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Install the ONA service package
-dpkg -i /root/ona/ona-service.deb
-
 # Set up firewall - relies on iptables-persistent package.
 cp /root/ona/rules.v4 /etc/iptables/rules.v4
 cp /root/ona/rules.v6 /etc/iptables/rules.v6
@@ -26,7 +23,17 @@ rndstr="$(/usr/bin/mcookie | /usr/bin/cut -c -6)"
 /bin/sed -i s/ona-default/ona-$rndstr/g /etc/host*
 
 # Fix up MOTD.
-for f in $(echo "10-help-text 50-landscape-sysinfo 90-updates-available 91-release-upgrade"); do
-    rm /etc/update-motd.d/$f
-done
-cp /root/ona/motd.tail /etc/
+mv /root/ona/motd.tail /etc/update-motd.d/01-obsrvbl
+
+# Install the ONA service package
+apt-add-repository "deb https://sensor.ext.obsrvbl.com/obsrvbl-apt/ xenial main"
+apt-key add /root/ona/obsrvbl_repo.pub
+sudo apt-get update
+sudo apt-get install -y netsa-pkg || true
+sudo apt-get install -y ona-service
+
+# Mark the Observable repository for automatic update
+if [ -e /etc/apt/apt.conf.d/50unattended-upgrades ]; then
+    cp /root/ona/51obsrvbl-upgrades /etc/apt/apt.conf.d/51obsrvbl-upgrades
+    chmod 644 /etc/apt/apt.conf.d/51obsrvbl-upgrades
+fi

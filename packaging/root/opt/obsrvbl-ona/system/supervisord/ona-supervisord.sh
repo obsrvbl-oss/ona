@@ -23,7 +23,12 @@ export PYTHONPATH=/opt/obsrvbl-ona/ona_service/vendor
 mkdir -p /opt/obsrvbl-ona/logs/ona_service
 
 # Check in with the site for configuration updates
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+if [ -e /usr/bin/timeout ]; then
+    /usr/bin/timeout 60s /usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+else
+    /usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+fi
+
 . /opt/obsrvbl-ona/config
 
 # Set up supervisord's configuration file
