@@ -15,32 +15,24 @@ from __future__ import division, print_function, unicode_literals
 
 # python builtins
 from os import getenv
-from os.path import join
-from tempfile import gettempdir
 
 # local
-from tcpdump_capturer import TcpdumpCapturer
+from tcpdump_pusher import TcpdumpPusher
+
+ENV_PDNS_PCAP_DIR = 'OBSRVBL_PDNS_PCAP_DIR'
+DEFAULT_PDNS_PCAP_DIR = './logs'
 
 
-class PdnsCapturer(TcpdumpCapturer):
+class PdnsPusher(TcpdumpPusher):
     def __init__(self, *args, **kwargs):
         init_kwargs = {
-            'bpf_filter': 'ip and udp src port 53',
             'data_type': 'pdns',
-            'capture_iface': getenv('OBSRVBL_PDNS_CAPTURE_IFACE', 'any'),
-            'capture_seconds': int(
-                getenv('OBSRVBL_PDNS_CAPTURE_SECONDS', '600')
-            ),
-            'pcap_dir': join(
-                gettempdir(), getenv('OBSRVBL_PDNS_PCAP_DIR', 'obsrvbl_pdns')
-            ),
             'poll_seconds': 600,
-            'pps_limit': int(getenv('OBSRVBL_PDNS_PPS_LIMIT', '333')),
+            'pcap_dir': getenv(ENV_PDNS_PCAP_DIR, DEFAULT_PDNS_PCAP_DIR),
         }
         kwargs.update(init_kwargs)
-        super(PdnsCapturer, self).__init__(*args, **kwargs)
+        super(PdnsPusher, self).__init__(*args, **kwargs)
 
 
 if __name__ == '__main__':
-    capturer = PdnsCapturer()
-    capturer.run()
+    PdnsPusher().run()

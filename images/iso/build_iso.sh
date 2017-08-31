@@ -21,7 +21,7 @@
 #    wrong.
 #
 
-RELEASE="${RELEASE:-14.04.4}"
+RELEASE="${RELEASE:-16.04.2}"
 ARCH="${ARCH:-amd64}"
 
 UBUNTU="http://releases.ubuntu.com"
@@ -44,7 +44,7 @@ done
 ubuntu_name="ubuntu-${RELEASE}-server-${ARCH}.iso"
 ona_name="ona-${RELEASE}-server-${ARCH}.iso"
 ubuntu_url="${url:-${UBUNTU}/${RELEASE}/${ubuntu_name}}"
-ona_service_url="https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuPrecise_${ARCH}.deb"
+suricata_url="https://s3.amazonaws.com/onstatic/suricata-service/master/suricata-service.deb"
 
 shift $(($OPTIND-1))
 
@@ -69,14 +69,14 @@ fi
 
 mkdir $DIR/working
 pushd $DIR/working
-  curl -o ${ubuntu_name} "${ubuntu_url}"
-  curl -o ona-service.deb "${ona_service_url}"
+  curl -L -o ${ubuntu_name} "${ubuntu_url}"
+  curl -L -o suricata-service.deb "${suricata_url}"
   mkdir cdrom local
   $sudo mount -o loop "${ubuntu_name}" cdrom
   rsync -av cdrom/ local
   $sudo cp ../preseed/* local/preseed/
   $sudo cp -r ../ona local
-  $sudo cp -r ona-service.deb local/ona/ona-service.deb
+  $sudo cp -r suricata-service.deb local/ona/suricata-service.deb
   $sudo cp ../isolinux/txt.cfg local/isolinux/txt.cfg
   $sudo mkisofs -r -V "Observable Networks Install CD" \
           -cache-inodes \

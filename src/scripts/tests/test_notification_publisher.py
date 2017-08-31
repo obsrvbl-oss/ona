@@ -252,6 +252,18 @@ class NotificationPublisherTest(TestCase):
                  engineID='01020304'),
         ])
 
+    @patch('ona_service.api.Api.get_data', autospec=True)
+    def test_execute_none(self, mock_get):
+        env_override = {
+            'OBSRVBL_SNMP_ENABLED': 'false',
+            'OBSRVBL_SYSLOG_ENABLED': 'false',
+        }
+        with patch.dict('ona_service.ipfix_pusher.environ', env_override):
+            pub = NotificationPublisher()
+            pub.execute()
+
+        self.assertEqual(mock_get.call_count, 0)
+
     @patch('ona_service.notification_publisher.utcnow', autospec=True)
     @patch('ona_service.api.Api.get_data', autospec=True)
     @patch('ona_service.notification_publisher.create_logger', autospec=True)
@@ -293,6 +305,47 @@ class NotificationPublisherTest(TestCase):
             {
                 'alerts': {'time__gt': '2015-05-01T01:02:05+00:00'},
                 'observations': {'time__gt': '2015-05-01T01:02:05+00:00'}
+            }
+        )
+
+    @patch('ona_service.notification_publisher.utcnow', autospec=True)
+    @patch('ona_service.api.Api.get_data', autospec=True)
+    @patch('ona_service.notification_publisher.create_logger', autospec=True)
+    def test_execute_detail_only(self, mock_create_logger, mock_get, mock_now):
+        mock_logger = Mock()
+        mock_create_logger.return_value = mock_logger
+
+        messages = [
+            {'id': 1, 'time': '2015-05-01T01:02:03+00:00'},
+            {'id': 2, 'time': '2015-05-01T01:02:04+00:00'},
+            {'id': 3, 'time': '2015-05-01T01:02:05+00:00'},
+        ]
+        mock_get.return_value.json.return_value = {'objects': messages}
+
+        now = datetime.utcnow().replace(tzinfo=utc)
+        mock_now.return_value = now
+        default_params = {'time__gt': now.isoformat()}
+
+        with patch.dict('os.environ'):
+            os.environ['OBSRVBL_NOTIFICATION_TYPES'] = 'alerts-detail bogus'
+            pub = NotificationPublisher()
+            pub.execute()
+
+        self.assertEquals(mock_get.call_args_list, [
+            call(pub.api, 'alert-notifications', default_params),
+        ])
+
+        self.assertEquals(mock_logger.error.call_args_list, [
+            call(m) for m in messages
+        ])
+
+        with open(STATE_FILE, 'r') as f:
+            state = json.load(f)
+
+        self.assertEquals(
+            state,
+            {
+                'alerts-detail': {'time__gt': '2015-05-01T01:02:05+00:00'},
             }
         )
 

@@ -10,6 +10,9 @@
 # Inbound NetFlow
 -A INPUT -p udp --dport 9995 -m state --state NEW,ESTABLISHED -j ACCEPT
 
+# Inbound SFlow
+# -A INPUT -p udp --dport 6343 -m state --state NEW,ESTABLISHED -j ACCEPT
+
 # Outbound ping
 -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
 -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT

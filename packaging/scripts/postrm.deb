@@ -2,11 +2,17 @@
 
 set -e
 
+# sudoers reference
+rm -f /etc/sudoers.d/obsrvbl_ona
+
 # Upstart services
 rm -f /etc/init/obsrvbl-ona.conf
 
 # systemd services
 rm -f /lib/systemd/system/obsrvbl-ona.service
+
+# Update configuration
+rm -f /etc/apt/apt.conf.d/51obsrvbl-upgrades
 
 # https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html
 if [ "$1" = "purge" ] ; then

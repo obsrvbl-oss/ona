@@ -6,12 +6,12 @@ See [observable.net](https://observable.net) for more information about Observab
 
 ## Supported platforms
 
-Pre-built packages are available for several platforms.
+The following platforms are officially supported:
 
-* Ubuntu 12.04 and 14.04
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuPrecise_amd64.deb)
-    * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuPrecise_i386.deb)
-* Ubuntu 15.04 and later:
+* Ubuntu 14.04
+    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuTrusty_amd64.deb)
+    * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuTrusty_i386.deb)
+* Ubuntu 16.04 and later:
     * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuVivid_amd64.deb)
     * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuVivid_i386.deb)
 * RHEL 6 and compatible (including CentOS 6* and Amazon Linux for EC2):
@@ -19,16 +19,16 @@ Pre-built packages are available for several platforms.
     * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_i386.rpm)
 * RHEL 7 and compatible (including CentOS 7):
     * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_7_amd64.rpm)
-* Raspberry Pi 2 Model B with Raspbian (requires the `upstart` package):
-    * [32-bit armhf](https://s3.amazonaws.com/onstatic/ona/armhf/ona-service_UbuntuPrecise_armhf.deb)
+* Raspberry Pi 2 Model B with Raspbian:
+    * [32-bit armhf](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RaspbianJessie_armhf.deb)
 * Docker (tested with CoreOS):
     * [64-bit](https://github.com/obsrvbl/ona/blob/master/images/docker/Dockerfile)
 
-To install the latest version on Ubuntu 12.04 or 14.04 (recommended for physical and virtual machine installations):
+To install the latest version on 14.04 (recommended for physical and virtual machine installations):
 
 ```
-# wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuPrecise_amd64.deb
-# dpkg -i ona-service_UbuntuPrecise_amd64.deb
+# wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuTrusty_amd64.deb
+# dpkg -i ona-service_UbuntuTrusty_amd64.deb
 ```
 
 (Replace `master` with a version tag if you need an older version.)
@@ -49,7 +49,6 @@ The ONA is composed of a number of configurable services, supervised by a single
 * `netflow-monitor` - Listens for NetFlow data sent by routers and switches.
 * `netflow-pusher` - Sends NetFlow data to the Observable cloud.
 * `notification-publisher` - Relays Observable observations and alerts over syslog or SNMP.
-* `arp-capturer` - Collects ARP traffic from the LAN.
 * `ossec-alert-watcher` - If OSSEC is installed, monitors its alerts.
 * `suricata-alert-watcher` - If Suricata is installed, monitors its alerts.
 

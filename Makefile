@@ -18,6 +18,7 @@ SHA := $(shell git rev-parse --short HEAD)
 SCRIPTS_DIR := src/scripts
 uPNA_DIR := src/uPNA
 NETFLOW_DIR := src/netflow
+IPFIX_DIR := src/ipfix
 
 OBSRVBL_ROOT := packaging/root/opt/obsrvbl-ona
 
@@ -42,8 +43,8 @@ copy:
 	git rev-parse HEAD > ${OBSRVBL_ROOT}/version
 	mkdir -p ${OBSRVBL_ROOT}/pna/user/
 	cp ${uPNA_DIR}/module/pna ${OBSRVBL_ROOT}/pna/user/pna
-	mkdir -p ${OBSRVBL_ROOT}/netflow/
-	cp -r ${NETFLOW_DIR}/* ${OBSRVBL_ROOT}/netflow/
+	mkdir -p ${OBSRVBL_ROOT}/ipfix/
+	cp -r ${IPFIX_DIR}/* ${OBSRVBL_ROOT}/ipfix/
 	mkdir -p ${OBSRVBL_ROOT}/ona_service/
 	cp -r ${SCRIPTS_DIR}/ona_service/* ${OBSRVBL_ROOT}/ona_service/
 
@@ -55,6 +56,7 @@ clean:
 	make -C ${SCRIPTS_DIR} clean
 	make -C ${uPNA_DIR} clean
 	rm -rf ${OBSRVBL_ROOT}/netflow/
+	rm -rf ${OBSRVBL_ROOT}/ipfix/
 	rm -rf ${OBSRVBL_ROOT}/ona_service/
 	rm -rf ${OBSRVBL_ROOT}/pna/
 	rm -rf ${OBSRVBL_ROOT}/version

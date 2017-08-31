@@ -23,8 +23,8 @@ SYSTEM_INFO = {
     'RaspbianWheezyUpstart': SystemInfo(
         'deb', ['adduser', 'tcpdump', 'upstart']
     ),
-    'RHEL_5': SystemInfo(
-        'rpm', []
+    'RaspbianJessie': SystemInfo(
+        'deb', ['adduser', 'tcpdump']
     ),
     'RHEL_6': SystemInfo(
         'rpm', ['tcpdump']
@@ -35,10 +35,10 @@ SYSTEM_INFO = {
     'SE2Linux': SystemInfo(
         'rpm', ['tcpdump']
     ),
-    'UbuntuPrecise': SystemInfo(
+    'UbuntuTrusty': SystemInfo(
         'deb', ['adduser', 'python2.7', 'sudo', 'tcpdump']
     ),
-    'UbuntuVivid': SystemInfo(
+    'UbuntuXenial': SystemInfo(
         'deb', ['adduser', 'python2.7', 'sudo', 'systemd-sysv', 'tcpdump']
     ),
 }
@@ -72,7 +72,8 @@ def main(proc_arch, version, system_type):
         '--license', 'Apache License 2.0',
         '--vendor', 'obsrvbl.com',
         '-a', proc_arch,
-        '--config-files', '/opt/obsrvbl-ona/config',
+        '--config-files', '/opt/obsrvbl-ona/config.auto',
+        '--config-files', '/opt/obsrvbl-ona/config.local',
         compression_flag, 'bzip2',
     ]
 

@@ -44,9 +44,12 @@ logfile_backups=0
 def mock_getenv(varname, value=None):
     D = {
         'OBSRVBL_PNA_SERVICE': 'true',
-        'OBSRVBL_NETFLOW_SERVICE': 'true',
         'OBSRVBL_HOSTNAME_RESOLVER': 'false',
+        'OBSRVBL_NOTIFICATION_PUBLISHER': 'true',
         'OBSRVBL_PNA_IFACES': 'eth0\neth1',
+        'OBSRVBL_YAF_CAPTURER': 'true',
+        'OBSRVBL_IPFIX_CAPTURER': 'true',
+        'OBSRVBL_PDNS_CAPTURER': 'true',
     }
 
     return D.get(varname, value)
@@ -77,8 +80,13 @@ class SupervisorConfigTestCase(TestCase):
             'program:ona-pna-monitor_eth0',
             'program:ona-pna-monitor_eth1',
             'program:ona-pna-pusher',
-            'program:ona-netflow-monitor',
-            'program:ona-netflow-pusher',
+            'program:ona-ipfix-monitor',
+            'program:ona-yaf-monitor_eth0-4739',
+            'program:ona-yaf-monitor_eth1-4740',
+            'program:ona-ipfix-pusher',
+            'program:ona-notification-publisher',
+            'program:ona-pdns-monitor',
+            'program:ona-pdns-pusher',
         ]
         self.assertItemsEqual(actual, expected)
 
@@ -86,24 +94,43 @@ class SupervisorConfigTestCase(TestCase):
     def test_standard_program(self):
         self.inst.update()
 
-        actual = dict(self.inst.config.items('program:ona-netflow-pusher'))
+        actual = dict(
+            self.inst.config.items('program:ona-notification-publisher')
+        )
 
         expected = DEFAULT_PARAMETERS.copy()
-        expected['command'] = ' '.join(PROGRAM_COMMANDS['ona-netflow-pusher'])
-        expected['stdout_logfile'] = LOG_PATH.format('ona-netflow-pusher')
+        args = PROGRAM_COMMANDS['ona-notification-publisher']
+        expected['command'] = ' '.join('"{}"'.format(x) for x in args)
+        expected['stdout_logfile'] = LOG_PATH.format(
+            'ona-notification-publisher'
+        )
 
         self.assertEqual(actual, expected)
 
     @patch('ona_service.supervisor_config.getenv', mock_getenv)
-    def test_custom_program(self):
+    def test_pna(self):
         self.inst.update()
 
         actual = dict(self.inst.config.items('program:ona-pna-monitor_eth1'))
 
         expected = PROGRAM_PARAMETERS['ona-pna-monitor'].copy()
-        expected['command'] = ' '.join(
-            PROGRAM_COMMANDS['ona-pna-monitor'] + ['eth1']
+        args = PROGRAM_COMMANDS['ona-pna-monitor'] + ['eth1']
+        expected['command'] = ' '.join('"{}"'.format(x) for x in args)
+
+        self.assertEqual(actual, expected)
+
+    @patch('ona_service.supervisor_config.getenv', mock_getenv)
+    def test_yaf(self):
+        self.inst.update()
+
+        actual = dict(
+            self.inst.config.items('program:ona-yaf-monitor_eth1-4740')
         )
+
+        expected = DEFAULT_PARAMETERS.copy()
+        args = PROGRAM_COMMANDS['ona-yaf-monitor'] + ['eth1', '4740']
+        expected['command'] = ' '.join('"{}"'.format(x) for x in args)
+        expected['stdout_logfile'] = LOG_PATH.format('ona-yaf-monitor')
 
         self.assertEqual(actual, expected)
 

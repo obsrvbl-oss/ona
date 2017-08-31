@@ -36,5 +36,6 @@ class PostinstTestCase(TestCase):
         linux_system.set_user_group.assert_called_once_with()
         linux_system.set_owner.assert_called_once_with()
         linux_system.set_sudoer.assert_called_once_with()
+        linux_system.set_ona_name.assert_called_once_with()
         linux_system.install_services.assert_called_once_with()
         linux_system.start_service.assert_called_once_with('obsrvbl-ona')

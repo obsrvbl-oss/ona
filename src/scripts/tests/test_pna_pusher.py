@@ -21,6 +21,7 @@ from tests.test_pusher import PusherTestBase
 
 class PnaPusherTestCase(PusherTestBase, TestCase):
     def setUp(self):
+        self.data_type = 'pna'
         self.inst = self._get_instance(PnaPusher)
         self.tar_read_mode = 'r:bz2'
         super(PnaPusherTestCase, self).setUp()

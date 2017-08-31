@@ -14,6 +14,7 @@
 import os
 
 from datetime import datetime
+from httplib import REQUEST_ENTITY_TOO_LARGE
 from mock import patch, Mock
 from tempfile import NamedTemporaryFile
 from unittest import TestCase
@@ -22,6 +23,7 @@ from ona_service.api import (
     Api,
     ENV_OBSRVBL_SERVICE_KEY,
     HTTP_TIMEOUT,
+    requests,
     requests_exceptions,
     retry_connection,
 )
@@ -32,7 +34,7 @@ class ApiTestCase(TestCase):
         self.auth = ('service_key', 'my_key')
         os.environ[ENV_OBSRVBL_SERVICE_KEY] = self.auth[1]
         self.api = Api()
-        self.api.hostname = 'foo'
+        self.api.ona_name = 'foo'
 
     def tearDown(self):
         del os.environ[ENV_OBSRVBL_SERVICE_KEY]
@@ -131,6 +133,26 @@ class ApiTestCase(TestCase):
             assert_called_once_with()
 
         self.assertEquals(mock_requests.request.call_count, 1)
+
+    @patch('ona_service.api.requests', autospec=True)
+    def test_send_file_fail(self, mock_requests):
+        mock_requests.get.return_value.json.return_value = {
+            'headers': 'headers!',
+            'url': 'url!',
+            'method': 'SUPERGET',
+            'path': 'remote_path!',
+        }
+        response = requests.Response()
+        response.status_code = REQUEST_ENTITY_TOO_LARGE
+        mock_requests.request.return_value = response
+
+        time = datetime.utcnow()
+        with NamedTemporaryFile() as f:
+            f.write("hee hee hee")
+            f.seek(0)
+            remote_path = self.api.send_file('mytype', f.name, time)
+
+        self.assertIsNone(remote_path)
 
     @patch('ona_service.api.requests', autospec=True)
     def test_send_signal(self, mock_requests):

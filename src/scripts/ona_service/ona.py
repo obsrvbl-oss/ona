@@ -68,22 +68,25 @@ CONFIG_PARAMS = {
     'snmp_version',
     'snmpv3_engineid',
     'snmpv3_passphrase',
+    'snmpv3_passphrase',
+    'ipfix_replace_timestamps',
+    'ipfix_reverse_directions',
     # ONA services
     'PNA_SERVICE',
-    'NETFLOW_SERVICE',
     'LOG_WATCHER',
     'HOSTNAME_RESOLVER',
     'NOTIFICATION_PUBLISHER',
-    'ARP_CAPTURER',
-    'IEC61850_CAPTURER',
+    'BRO_LOG_WATCHER',
     'PDNS_CAPTURER',
     'SERVICE_OSSEC',
     'SERVICE_SURICATA',
     # Other parameters
+    'SERVICE_KEY',
     'PNA_IFACES',
     'PDNS_CAPTURE_IFACE',
-    'SERVICE_KEY',
-    'NETFLOW_PORT',
+    'BRO_LOG_PATH',
+    'HOSTNAME_DNS',
+    'HOSTNAME_NETBIOS',
 }
 
 ALLOWED_CHARS = re.compile(r"\A([-_*+.,:;<=>@'^?\n\r \tA-Za-z0-9])+\Z")
@@ -91,6 +94,7 @@ ALLOWED_CHARS = re.compile(r"\A([-_*+.,:;<=>@'^?\n\r \tA-Za-z0-9])+\Z")
 
 class ONA(Service):
     def __init__(self, *args, **kwargs):
+        logging.info('Observable ONA service starting')
         self.config_file = kwargs.pop('config_file', AUTO_CONFIG_FILE)
         self.config_mode = getenv('OBSRVBL_MANAGE_MODE', 'manual')
         self.update_only = kwargs.pop('update_only', False)
@@ -120,7 +124,7 @@ class ONA(Service):
         Downloads configuration data from the site and returns it
         """
         try:
-            path = 'sensors/{}'.format(self.api.hostname)
+            path = 'sensors/{}'.format(self.api.ona_name)
             sensor = self.api.get_data(path).json()
         except ValueError:
             return None

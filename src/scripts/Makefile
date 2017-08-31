@@ -19,8 +19,10 @@ requirements:
 flake8:
 	flake8 --max-complexity 10 --exclude=ona_service/vendor/ .
 
-test: requirements flake8
+quicktest:
 	python -m nose --verbose --where=tests/ ${tests}
+
+test: requirements flake8 quicktest
 
 coverage: requirements flake8
 	coverage run -m nose --verbose --where="tests/"

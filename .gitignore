@@ -3,6 +3,7 @@
 Session.vim
 .netrwhist
 *~
+*.swp
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

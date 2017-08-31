@@ -1,0 +1,4 @@
+local7.none  -/var/log/syslog
+
+$RepeatedMsgReduction off
+local7.alert  /var/log/samba_audit.log

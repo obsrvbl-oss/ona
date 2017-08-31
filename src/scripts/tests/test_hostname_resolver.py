@@ -11,139 +11,249 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import io
 import json
 import signal
-import socket
 
-from datetime import datetime
+from subprocess import CalledProcessError
 from unittest import TestCase
 
-from mock import call, patch, Mock
+from mock import call, patch, MagicMock
 
 from ona_service.hostname_resolver import (
+    ENV_HOSTNAME_DNS,
+    ENV_HOSTNAME_NETBIOS,
+    gethostbyaddr,
     HostnameResolver,
-    resolve_host_name,
-    resolve_host_names
+    nmblookup,
+    resolve_host_names,
 )
+
+PATCH_PATH = 'ona_service.hostname_resolver.{}'
+DNS_RESOLUTIONS = {'10.1.1.1': 'test_1', '192.168.1.12': 'test_2'}
+NETBIOS_RESOLUTIONS = {'192.0.2.1': 'test_3', '192.168.1.12': 'test_2.bogus'}
 
 
 class HostnameResolverTest(TestCase):
-    def setUp(self):
-        pass
+    def test_gethostbyaddr(self):
+        self.assertEqual(gethostbyaddr('127.0.0.1'), 'localhost')
+        self.assertIsNone(gethostbyaddr('127.0.0.256'))
+        self.assertIsNone(gethostbyaddr('bogus'))
 
-    @patch('ona_service.hostname_resolver.sleep')
-    @patch('socket.gethostbyaddr')
-    def test_resolve_host_names(self, mock_get_host, mock_sleep):
-        mock_get_host.return_value = ('test', '')
+    @patch(PATCH_PATH.format('subprocess.check_output'), autospec=True)
+    def test_nmblookup(self, mock_check_output):
+        mock_check_output.return_value = (
+            'Ignoring unknown parameter "server role"\n'
+            'Looking up status of 192.0.2.1\n'
+            '\tWRONG           <00> -         M <OFFLINE>\n'
+            '\tWKSOBSR01       <00> -         M <ACTIVE> \n'
+            '\tON              <00> - <GROUP> M <ACTIVE> \n'
+            '\tON              <1c> - <GROUP> M <ACTIVE> \n'
+            '\tWKSOBSR01       <20> -         M <ACTIVE> \n'
+            '\n\tMAC Address = 02-04-01-01-04-02\n'
+            '\n'
+        )
+        self.assertEqual(nmblookup('192.0.2.1'), 'wksobsr01')
+        mock_check_output.assert_called_once_with(
+            'timeout 1s nmblookup -A 192.0.2.1'.split()
+        )
 
+    @patch(PATCH_PATH.format('subprocess.check_output'), autospec=True)
+    def test_nmblookup_fail(self, mock_check_output):
+        mock_check_output.return_value = (
+            'Ignoring unknown parameter "server role"\n'
+            'Looking up status of 192.0.2.1\n'
+            'No reply from 192.0.2.1\n\n'
+        )
+        self.assertIsNone(nmblookup('192.0.2.1'))
+
+        mock_check_output.side_effect = CalledProcessError(None, None)
+        self.assertIsNone(nmblookup('192.0.2.1'))
+
+    @patch(PATCH_PATH.format('sleep'), autospec=True)
+    def test_resolve_host_names(self, mock_sleep):
+        resolvers = [DNS_RESOLUTIONS.get, NETBIOS_RESOLUTIONS.get]
+        ips = ['10.1.1.1', '192.168.1.12', '192.0.2.1', '198.51.100.1']
+        actual = resolve_host_names(ips, resolvers)
+        expected = {
+            '10.1.1.1': 'test_1',
+            '192.168.1.12': 'test_2',
+            '192.0.2.1': 'test_3',
+            '198.51.100.1': None,
+        }
+        self.assertEqual(actual, expected)
+        self.assertEqual(mock_sleep.call_args_list, [call(0.1)] * len(ips))
+
+    @patch(PATCH_PATH.format('gethostbyaddr'), DNS_RESOLUTIONS.get)
+    def test_execute(self):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
+
+        # Set up mock for api.get_data - what we are to retrieve
         ips = ['10.1.1.1', '192.168.1.12']
-        hosts = resolve_host_names(ips)
+        self.inst.api.get_data.return_value.json.return_value = ips
 
-        self.assertEquals(hosts, {
-            '10.1.1.1': 'test',
-            '192.168.1.12': 'test'
-        })
-        self.assertEquals(mock_sleep.call_args_list, [
-            call(0.1),
-            call(0.1),
-        ])
+        # Set up mock for api.send_file
+        remote_path = 'file:///tmp/obsrvbl/hostnames/resolutions.json'
+        output = {}
 
-    @patch('socket.gethostbyaddr')
-    def test_resolve_host_name_kaboom(self, mock_get_host):
-        mock_get_host.side_effect = socket.herror
+        def _send_file(data_type, path, now, suffix=None):
+            with io.open(path, 'rb') as infile:
+                output[index] = infile.read()
 
-        host = resolve_host_name('bad ip')
-        self.assertEquals(host, None)
+            return remote_path
+        self.inst.api.send_file.side_effect = _send_file
 
-    @patch('ona_service.api.Api.send_signal')
-    @patch('ona_service.api.Api.send_file')
-    @patch('ona_service.hostname_resolver.NamedTemporaryFile')
-    def test_update_host_names(self, mock_tempfile, mock_upload, mock_signal):
-        handle = Mock()
-        handle.name = 'foobar'
-        mock_tempfile.return_value.__enter__.return_value = handle
-        mock_upload.return_value = 's3://blah/blah'
+        # Do the deed
+        index = 0
+        self.inst.execute()
 
-        hosts = ['host1', 'host2']
-        time = datetime.utcnow()
-        resolver = HostnameResolver()
-        resolver._update_host_names(hosts, time)
+        self.assertEqual(self.inst.api.send_file.call_count, 1)
+        call_args, call_kwargs = self.inst.api.send_file.call_args
+        self.assertEqual(call_args[0], 'hostnames')
+        self.assertEqual(call_kwargs['suffix'], 'hosts')
+        self.assertEqual(output[0], json.dumps(DNS_RESOLUTIONS))
+        self.inst.api.send_signal.assert_called_once_with(
+            'hostnames', {'path': remote_path}
+        )
 
-        handle.write.assert_called_once_with(json.dumps(hosts))
-        mock_upload.assert_called_once_with('hostnames', 'foobar', time,
-                                            suffix='hosts')
-        mock_signal.assert_called_once_with(
-            'hostnames', {'path': mock_upload.return_value})
+    @patch.dict(
+        'os.environ',
+        {ENV_HOSTNAME_DNS: 'false', ENV_HOSTNAME_NETBIOS: 'true'}
+    )
+    @patch(PATCH_PATH.format('subprocess.check_output'), autospec=True)
+    def test_execute_netbios(self, mock_check_output):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
 
-    @patch('ona_service.hostname_resolver.resolve_host_names')
-    @patch('ona_service.hostname_resolver.HostnameResolver._update_host_names')
-    @patch('ona_service.api.Api.get_data')
-    def test_execute(self, mock_get_data, mock_update, mock_resolve):
-        ips = ['1.2.3.4', '5.6.7.8']
-        hosts = ['host1', 'host2']
-        mock_get_data.return_value.json.return_value = ips
-        mock_resolve.return_value = hosts
+        # Set up mock for api.get_data - what we are to retrieve
+        ips = ['192.0.2.1', '192.168.1.12']
+        self.inst.api.get_data.return_value.json.return_value = ips
 
-        resolver = HostnameResolver()
-        resolver.execute()
+        # Set up mock for api.send_file
+        remote_path = 'file:///tmp/obsrvbl/hostnames/resolutions.json'
+        output = {}
 
-        mock_get_data.assert_called_once_with('hostnames')
-        mock_resolve.assert_called_once_with(ips)
-        mock_update.assert_called_once_with(hosts, None)
+        def _send_file(data_type, path, now, suffix=None):
+            with io.open(path, 'rb') as infile:
+                output[index] = infile.read()
 
-    @patch('ona_service.hostname_resolver.resolve_host_names')
-    @patch('ona_service.hostname_resolver.HostnameResolver._update_host_names')
-    @patch('ona_service.api.Api.get_data')
-    def test_execute_specify_date(self, mock_get_data, mock_update,
-                                  mock_resolve):
-        ips = ['1.2.3.4', '5.6.7.8']
-        hosts = ['host1', 'host2']
-        mock_get_data.return_value.json.return_value = ips
-        mock_resolve.return_value = hosts
+            return remote_path
+        self.inst.api.send_file.side_effect = _send_file
 
-        time = datetime.utcnow()
-        resolver = HostnameResolver()
-        resolver.execute(time)
+        # Set up the resolver
+        def _check_output(*popenargs, **kwargs):
+            ip = popenargs[0][-1]
+            if ip == '192.0.2.1':
+                return '\tTEST_3 <00> - M <ACTIVE> \n'
+            elif ip == '192.168.1.12':
+                return '\tTEST_2.BOGUS <00> - M <ACTIVE> \n'
+            raise CalledProcessError(None, None)
+        mock_check_output.side_effect = _check_output
 
-        mock_get_data.assert_called_once_with('hostnames')
-        mock_resolve.assert_called_once_with(ips)
-        mock_update.assert_called_once_with(hosts, time)
+        # Do the deed
+        index = 0
+        self.inst.execute()
 
-    @patch('ona_service.hostname_resolver.resolve_host_names')
-    @patch('ona_service.hostname_resolver.HostnameResolver._update_host_names')
-    @patch('ona_service.api.Api.get_data')
-    def test_execute_no_ips(self, mock_get_data, mock_update, mock_resolve):
-        ips = []
-        mock_get_data.return_value.json.return_value = ips
+        self.assertEqual(self.inst.api.send_file.call_count, 1)
+        call_args, call_kwargs = self.inst.api.send_file.call_args
+        self.assertEqual(call_args[0], 'hostnames')
+        self.assertEqual(call_kwargs['suffix'], 'hosts')
+        self.assertEqual(output[0], json.dumps(NETBIOS_RESOLUTIONS))
+        self.inst.api.send_signal.assert_called_once_with(
+            'hostnames', {'path': remote_path}
+        )
 
-        resolver = HostnameResolver()
-        resolver.execute()
+    @patch.dict('os.environ', {ENV_HOSTNAME_NETBIOS: 'true'})
+    @patch(PATCH_PATH.format('gethostbyaddr'), DNS_RESOLUTIONS.get)
+    @patch(PATCH_PATH.format('subprocess.check_output'), autospec=True)
+    def test_execute_both(self, mock_check_output):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
 
-        mock_get_data.assert_called_once_with('hostnames')
-        self.assertEquals(mock_resolve.call_args_list, [])
-        self.assertEquals(mock_update.call_args_list, [])
+        # Set up mock for api.get_data - what we are to retrieve
+        ips = ['192.0.2.1', '192.168.1.12', '10.1.1.1', '198.51.100.1']
+        self.inst.api.get_data.return_value.json.return_value = ips
 
-    @patch('ona_service.hostname_resolver.resolve_host_names')
-    @patch('ona_service.hostname_resolver.HostnameResolver._update_host_names')
-    @patch('ona_service.api.Api.get_data')
-    def test_execute_ipsplosion(self, mock_get_data, mock_update,
-                                mock_resolve):
-        mock_get_data.return_value.json.side_effect = ValueError
+        # Set up mock for api.send_file
+        remote_path = 'file:///tmp/obsrvbl/hostnames/resolutions.json'
+        output = {}
 
-        resolver = HostnameResolver()
-        resolver.execute()
+        def _send_file(data_type, path, now, suffix=None):
+            with io.open(path, 'rb') as infile:
+                output[index] = infile.read()
 
-        mock_get_data.assert_called_once_with('hostnames')
-        self.assertEquals(mock_resolve.call_args_list, [])
-        self.assertEquals(mock_update.call_args_list, [])
+            return remote_path
+        self.inst.api.send_file.side_effect = _send_file
 
-    @patch('ona_service.api.requests', autospec=True)
-    def test_service(self, mock_requests):
-        resolver = HostnameResolver()
-        resolver.poll_seconds = 0
+        # Set up the resolver
+        def _check_output(*popenargs, **kwargs):
+            ip = popenargs[0][-1]
+            if ip == '192.0.2.1':
+                return '\tTEST_3 <00> - M <ACTIVE> \n'
+            elif ip == '192.168.1.12':
+                return '\tTEST_2.BOGUS <00> - M <ACTIVE> \n'
+            raise CalledProcessError(None, None)
+        mock_check_output.side_effect = _check_output
+
+        expected_resolutions = {
+            '192.0.2.1': NETBIOS_RESOLUTIONS['192.0.2.1'],
+            '192.168.1.12': NETBIOS_RESOLUTIONS['192.168.1.12'],
+            '10.1.1.1': DNS_RESOLUTIONS['10.1.1.1'],
+            '198.51.100.1': None,
+        }
+
+        # Do the deed
+        index = 0
+        self.inst.execute()
+
+        self.assertEqual(self.inst.api.send_file.call_count, 1)
+        call_args, call_kwargs = self.inst.api.send_file.call_args
+        self.assertEqual(call_args[0], 'hostnames')
+        self.assertEqual(call_kwargs['suffix'], 'hosts')
+        self.assertEqual(output[0], json.dumps(expected_resolutions))
+        self.inst.api.send_signal.assert_called_once_with(
+            'hostnames', {'path': remote_path}
+        )
+
+    @patch.dict(
+        'os.environ',
+        {ENV_HOSTNAME_DNS: 'false', ENV_HOSTNAME_NETBIOS: 'false'}
+    )
+    def test_execute_no_resolvers(self):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
+        self.inst.api.get_data.return_value.json.return_value = []
+        self.inst.execute()
+
+        self.assertEqual(self.inst.api.send_file.call_count, 0)
+        self.assertEqual(self.inst.api.send_signal.call_count, 0)
+
+    def test_execute_no_ips(self):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
+        self.inst.api.get_data.return_value.json.return_value = []
+        self.inst.execute()
+
+        self.assertEqual(self.inst.api.send_file.call_count, 0)
+        self.assertEqual(self.inst.api.send_signal.call_count, 0)
+
+    def test_execute_error(self):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
+        self.inst.api.get_data.return_value.json.side_effect = ValueError
+        self.inst.execute()
+
+        self.assertEqual(self.inst.api.send_file.call_count, 0)
+        self.assertEqual(self.inst.api.send_signal.call_count, 0)
+
+    def test_service(self):
+        self.inst = HostnameResolver()
+        self.inst.api = MagicMock()
+        self.inst.poll_seconds = 0
 
         def killer(signum, frame):
-            resolver.stop()
+            self.inst.stop()
         signal.signal(signal.SIGALRM, killer)
         signal.alarm(1)
-        resolver.run()
+        self.inst.run()

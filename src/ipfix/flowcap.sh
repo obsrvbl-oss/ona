@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -ex
 
 #  Copyright 2015 Observable Networks
 #
@@ -14,16 +14,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+mkdir -p "$OBSRVBL_IPFIX_LOGDIR"
 
-case "$1" in
-    abort-upgrade|abort-remove|abort-deconfigure|configure)
-    ;;
-    *)
-        echo "postinst called with unknown argument \`$1'" >&2
-        exit 1
-        ;;
-esac
+ROTATE_PERIOD=60
 
+export TZ="Etc/UTC"
+export SILK_LIBFIXBUF_SUPPRESS_WARNINGS="1"
 
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/installation/postinst.py "UbuntuVivid"
+# Write the configuration file
+/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/flowcap_config.py
+
+exec /opt/silk/sbin/flowcap \
+    --destination-directory="$OBSRVBL_IPFIX_LOGDIR" \
+    --sensor-configuration="$OBSRVBL_IPFIX_CONF" \
+    --max-file-size="104857600" \
+    --timeout="$ROTATE_PERIOD" \
+    --clock-time="$ROTATE_PERIOD" \
+    --compression-method="none" \
+    --log-destination="stdout" \
+    --log-level="warning" \
+    --no-daemon

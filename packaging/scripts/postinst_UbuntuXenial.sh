@@ -26,4 +26,4 @@ case "$1" in
 esac
 
 
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/installation/postinst.py "UbuntuPrecise"
+/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/installation/postinst.py "UbuntuXenial"

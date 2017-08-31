@@ -58,6 +58,7 @@ class PnaPusher(Pusher):
 
         super(PnaPusher, self).__init__(*args, **kwargs)
 
+
 if __name__ == '__main__':
     pusher = PnaPusher()
     pusher.run()
