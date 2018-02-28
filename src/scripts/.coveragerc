@@ -1,7 +1,6 @@
 [run]
 branch=True
 include=ona_service/*
-omit=ona_service/vendor/*
 
 [report]
 show_missing = True

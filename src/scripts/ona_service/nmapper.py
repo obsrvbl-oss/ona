@@ -14,8 +14,8 @@
 
 # python builtins
 import logging
-from vendor.libnmap.process import NmapProcess
-from vendor.libnmap.parser import NmapParser, NmapParserException
+from libnmap.process import NmapProcess
+from libnmap.parser import NmapParser, NmapParserException
 
 # local
 from service import Service

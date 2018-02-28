@@ -17,6 +17,7 @@ from __future__ import print_function, unicode_literals
 import io
 import logging
 
+from collections import defaultdict
 from csv import DictReader, DictWriter
 from datetime import datetime
 from gzip import open as gz_open
@@ -43,6 +44,7 @@ ENV_IPFIX_INDEX_RANGES = 'OBSRVBL_IPFIX_INDEX_RANGES'
 CSV_HEADER = 'srcaddr,dstaddr,srcport,dstport,protocol,bytes,packets,start,end'
 RWFILTER_PATH = '/opt/silk/bin/rwfilter'
 RWUNIQ_PATH = '/opt/silk/bin/rwuniq'
+RWCUT_PATH = '/opt/silk/bin/rwcut'
 POLL_SECONDS = 30
 
 
@@ -117,6 +119,8 @@ class IPFIXPusher(Pusher):
         return True
 
     def _aggregate_silk(self, input_path, output_path):
+        # Calls out to rwuniq, which aggregates flows with the same 5-tuple
+        # key; converting the binary SiLK format to text in the process.
         command = [
             RWUNIQ_PATH,
             '--no-titles',
@@ -133,6 +137,28 @@ class IPFIXPusher(Pusher):
         return_code = call(command)
         if return_code:
             logging.warning('rwuniq error processing %s', input_path)
+            return False
+
+        return True
+
+    def _dump_silk(self, input_path, output_path):
+        # Calls out to rwcut, which converts the binary SiLK format to text
+        # without doing further processing.
+        command = [
+            RWCUT_PATH,
+            '--no-titles',
+            '--no-columns',
+            '--no-final-delimiter',
+            '--column-sep', ',',
+            '--timestamp-format', 'epoch',
+            '--fields',
+            'sIp,dIp,sPort,dPort,protocol,Bytes,Packets,sTime,eTime',
+            '--output-path', output_path,
+            input_path,
+        ]
+        return_code = call(command)
+        if return_code:
+            logging.warning('rwcut error processing %s', input_path)
             return False
 
         return True
@@ -176,10 +202,45 @@ class IPFIXPusher(Pusher):
 
             yield row
 
+    def _trim_meraki(self, rows):
+        # Organize the flows by 5-tuple
+        tuple_flows = defaultdict(list)
+        for row in rows:
+            key = (
+                row['srcaddr'],
+                row['dstaddr'],
+                row['srcport'],
+                row['dstport'],
+                row['protocol'],
+            )
+            tuple_flows[key].append(row)
+
+        # The exporter gives cumulative byte and packet totals per 5-tuple,
+        # but peridoically resets.
+        # For example, byte counts might be: 100, 200, 300, 10, 110, 210...
+        # We'd want to emit: 300, 210, ...
+        for key, key_flows in tuple_flows.iteritems():
+            # We're guaranteed to have one row for each key; if we add a
+            # dummy to the end we're guaranteed to have at least 2, so we can
+            # be sure to emit the last row.
+            dummy_flow = key_flows[0].copy()
+            dummy_flow['bytes'] = '0'
+            dummy_flow['packets'] = '0'
+            key_flows.append(dummy_flow)
+
+            # Examine the current row and the next row, emitting the current
+            # row if the next one seems to follow a reset.
+            # The dummy makes sure we emit the last row.
+            for i in xrange(len(key_flows) - 1):
+                curr_bytes = int(key_flows[i]['bytes'])
+                next_bytes = int(key_flows[i + 1]['bytes'])
+                if next_bytes < curr_bytes:
+                    yield key_flows[i]
+
     def _get_quirks(self, input_path):
         # The input_path is like '/path/to/20170428150641_Sindex.000000.tmp'
         # Pull out the index
-        probe_index = basename(input_path).split('_')[1].split('.', 1)[0][1:]
+        probe_index = basename(input_path).split('.', 1)[0].split('_')[1][1:]
         key = 'OBSRVBL_IPFIX_PROBE_{}_SOURCE'.format(probe_index)
         source = environ.get(key)
 
@@ -190,6 +251,8 @@ class IPFIXPusher(Pusher):
         elif source == 'sonicwall':
             ret['replace_timestamps'] = True
         elif source == 'meraki':
+            ret['no_aggregation'] = True
+            ret['fix_meraki_counters'] = True
             ret['replace_timestamps'] = True
             ret['reverse_directions'] = True
 
@@ -201,10 +264,9 @@ class IPFIXPusher(Pusher):
 
         return datetime.strptime(prefix, self.file_fmt)
 
-    def _silk_to_csv(self, input_path, output_path):
+    def _silk_to_csv(self, input_path, output_path, quirks=None):
         ts_received = timestamp(self._get_received_datetime(input_path))
-
-        quirks = self._get_quirks(input_path)
+        quirks = quirks or {}
 
         in_args = input_path, 'rt'
         out_args = output_path, 'wt'
@@ -216,6 +278,10 @@ class IPFIXPusher(Pusher):
             )
             csv_writer.writeheader()
             rows = csv_reader
+            # Meraki reports cumulative counts that periodically reset;
+            # filter out the intermediate items
+            if quirks.get('fix_meraki_counters'):
+                rows = self._trim_meraki(rows)
             # If the timestamps from the NetFlow source are not trustworthy,
             # replace them with the received time.
             if quirks.get('replace_timestamps'):
@@ -232,13 +298,20 @@ class IPFIXPusher(Pusher):
 
     def _process_files(self, file_list):
         for file_path in file_list:
+            quirks = self._get_quirks(file_path)
+
             file_dir, file_name = split(file_path)
             temp_path = join(file_dir, '{}.tmp'.format(file_name))
             copy(file_path, temp_path)
 
             self._filter_silk(temp_path, file_path)
-            self._aggregate_silk(file_path, temp_path)
-            self._silk_to_csv(temp_path, file_path)
+
+            if quirks.get('no_aggregation'):
+                self._dump_silk(file_path, temp_path)
+            else:
+                self._aggregate_silk(file_path, temp_path)
+
+            self._silk_to_csv(temp_path, file_path, quirks)
 
             remove(temp_path)
 

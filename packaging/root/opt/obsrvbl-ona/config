@@ -141,6 +141,7 @@ OBSRVBL_CHECK_POINT_PUSHER="false"
 OBSRVBL_CHECK_POINT_LOGDIR="/opt/obsrvbl-ona/logs/check_point"
 OBSRVBL_CHECK_POINT_PATH="/var/log/check-point-fw.log"
 
+
 # load up auto and local config
 [ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO
 [ -f $OBSRVBL_CONFIG_LOCAL ] && . $OBSRVBL_CONFIG_LOCAL

@@ -1,3 +1,0 @@
-#format: min hr month-day month dow command
-# archive files once per day (removing old files)
-35 0 * * * $HOME/pna/util/cron/pna_archiver.sh

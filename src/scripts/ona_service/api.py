@@ -22,9 +22,9 @@ from httplib import REQUEST_ENTITY_TOO_LARGE
 from os import getenv
 
 # third-party
-from vendor import requests
-from vendor.requests import exceptions as requests_exceptions
-from vendor.retrying import retry
+import requests
+from requests import exceptions as requests_exceptions
+from retrying import retry
 
 # Logging setup: When using Python versions < 2.7.9, urllib3 raises
 # InsecurePlatformWarning to note that certain features are unavailable.
@@ -32,7 +32,7 @@ from vendor.retrying import retry
 logging.captureWarnings(True)
 py_warnings_logger = logging.getLogger('py.warnings')
 py_warnings_logger.setLevel(logging.ERROR)
-urllib3_logger = logging.getLogger('vendor.requests.packages.urllib3')
+urllib3_logger = logging.getLogger('urllib3')
 urllib3_logger.setLevel(logging.ERROR)
 
 # Requests setup: Wait HTTP_TIMEOUT seconds before timing out.
@@ -40,6 +40,7 @@ HTTP_TIMEOUT = 300.0
 
 ENV_OBSRVBL_HOST = 'OBSRVBL_HOST'
 DEFAULT_OBSRVBL_HOST = 'https://sensor.ext.obsrvbl.com'
+ENV_OBSRVBL_SENSOR_EXT_ONLY = 'OBSRVBL_SENSOR_EXT_ONLY'
 ENV_OBSRVBL_SERVICE_KEY = 'OBSRVBL_SERVICE_KEY'
 ENV_OBSRVBL_ONA_NAME = 'OBSRVBL_ONA_NAME'
 
@@ -88,7 +89,14 @@ class Api(object):
         service_key = getenv(ENV_OBSRVBL_SERVICE_KEY, None)
         if service_key:
             self.request_args['auth'] = ('service_key', service_key)
+
         self.ona_name = getenv(ENV_OBSRVBL_ONA_NAME, platform.node())
+
+        # allow sensor to request signed uploads route through the service
+        if getenv(ENV_OBSRVBL_SENSOR_EXT_ONLY, 'false') == 'true':
+            self.sensor_ext_only = True
+        else:
+            self.sensor_ext_only = False
 
     @retry(**retry_kwargs)
     def send_file(self, data_type, path, now, suffix=None):
@@ -110,7 +118,14 @@ class Api(object):
             month=now.month, day=now.day, time=now.time(),
             name=name)
         logging.info('Prepping file: {}'.format(url))
-        response = requests.get(url, **self.request_args)
+
+        sign_headers = {}
+        if self.sensor_ext_only:
+            sign_headers = {'sensor-ext-only': 'true'}
+
+        response = requests.get(
+            url, headers=sign_headers, **self.request_args
+        )
         response.raise_for_status()
 
         result = response.json()

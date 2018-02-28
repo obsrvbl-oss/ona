@@ -39,6 +39,7 @@ build:
 	make -C ${uPNA_DIR}
 
 copy:
+	make -C ${SCRIPTS_DIR} vendor
 	mkdir -p ${OBSRVBL_ROOT}/
 	git rev-parse HEAD > ${OBSRVBL_ROOT}/version
 	mkdir -p ${OBSRVBL_ROOT}/pna/user/

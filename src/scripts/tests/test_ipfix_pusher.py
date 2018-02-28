@@ -222,21 +222,44 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_fix_meraki(self, mock_call):
         self._touch_files()
-        # For Meraki the timestamps and directions get replaced
-        flow_line = (
+        # Intermediate report - will get subsumed by the next line
+        flow_line_1 = (
             '198.22.253.72,192.168.207.199,80,61391,6,'
             '58,1,1459535021,1459535021\n'
         )
-        altered_line = (
+        # Final report before reset - this will show up in the output
+        flow_line_2 = (
+            '198.22.253.72,192.168.207.199,80,61391,6,'
+            '158,1,1459535021,1459535021\n'
+        )
+        # After the reset - this won't show up
+        flow_line_3 = (
+            '198.22.253.72,192.168.207.199,80,61391,6,'
+            '157,1,1459535021,1459535021\n'
+        )
+        # This one shows up because it's the last report
+        flow_line_4 = (
+            '198.22.253.72,192.168.207.199,80,61391,6,'
+            '159,1,1459535021,1459535021\n'
+        )
+
+        altered_line_1 = (
             '192.168.207.199,198.22.253.72,61391,80,6,'
-            '58,1,1395669540,1395669540\n'
+            '158,1,1395669540,1395669540\n'
+        )
+        altered_line_2 = (
+            '192.168.207.199,198.22.253.72,61391,80,6,'
+            '159,1,1395669540,1395669540\n'
         )
 
         def side_effect(*args, **kwargs):
-            if 'rwuniq' not in args[0][0]:
+            if 'rwcut' not in args[0][0]:
                 return 0
-            with io.open(args[0][14], 'wt') as f:
-                f.write(flow_line)
+            with io.open(args[0][11], 'wt') as f:
+                f.write(flow_line_1)
+                f.write(flow_line_2)
+                f.write(flow_line_3)
+                f.write(flow_line_4)
             return 0
 
         mock_call.side_effect = side_effect
@@ -249,8 +272,10 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
 
         with gz_open(input_paths[0], 'rt') as infile:
             lines = infile.readlines()
+            self.assertEqual(len(lines), 1 + 2)  # Header + Rows
             self.assertEqual(lines[0], CSV_HEADER + '\n')
-            self.assertEqual(lines[1], altered_line)
+            self.assertEqual(lines[1], altered_line_1)
+            self.assertEqual(lines[2], altered_line_2)
 
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_fix_asa(self, mock_call):

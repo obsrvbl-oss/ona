@@ -33,7 +33,7 @@ import re
 from argparse import ArgumentParser
 from datetime import datetime
 from errno import EAGAIN
-from os import getenv
+from os import getenv, listdir
 from platform import platform, python_version
 from sys import exit
 
@@ -52,7 +52,7 @@ AUTO_CONFIG_FILE = '/opt/obsrvbl-ona/config.auto'
 # environment; we'll sanitize them, and the site should also sanitize them as
 # well. They should be simple. The lower case character are UPPER case when
 # exported.
-CONFIG_PARAMS = {
+CONFIG_WHITELIST = {
     # Parameters available on the site
     'networks',
     'pdns_pps_limit',
@@ -76,10 +76,10 @@ CONFIG_PARAMS = {
     'LOG_WATCHER',
     'HOSTNAME_RESOLVER',
     'NOTIFICATION_PUBLISHER',
-    'BRO_LOG_WATCHER',
     'PDNS_CAPTURER',
     'SERVICE_OSSEC',
     'SERVICE_SURICATA',
+    'IPFIX_CAPTURER',
     # Other parameters
     'SERVICE_KEY',
     'PNA_IFACES',
@@ -87,7 +87,11 @@ CONFIG_PARAMS = {
     'BRO_LOG_PATH',
     'HOSTNAME_DNS',
     'HOSTNAME_NETBIOS',
+    'SENSOR_EXT_ONLY',
 }
+
+IPFIX_PREFIX = 'IPFIX_PROBE_'
+IPFIX_SUFFIXES = {'TYPE', 'PORT', 'PROTOCOL', 'SOURCE'}
 
 ALLOWED_CHARS = re.compile(r"\A([-_*+.,:;<=>@'^?\n\r \tA-Za-z0-9])+\Z")
 
@@ -99,6 +103,11 @@ class ONA(Service):
         self.config_mode = getenv('OBSRVBL_MANAGE_MODE', 'manual')
         self.update_only = kwargs.pop('update_only', False)
         self.current_config = self._load_config()
+
+        self.network_ifaces = None
+        if getenv('OBSRVBL_WATCH_IFACES', 'false') == 'true':
+            self.network_ifaces = self._get_network_ifaces()
+
         super(ONA, self).__init__(*args, **kwargs)
 
     def _report_to_site(self):
@@ -132,6 +141,9 @@ class ONA(Service):
         site_config = self._build_config(sensor.get('config', ''))
         return site_config
 
+    def _get_network_ifaces(self):
+        return set(listdir('/sys/class/net/'))
+
     def _load_config(self):
         """
         Reads configuration from the local file, if it's available
@@ -152,13 +164,22 @@ class ONA(Service):
 
     def _build_config(self, config):
         # build the config based on the JSON provided config and the known
-        # CONFIG_PARAMS. Output should match the file we generate.
+        # CONFIG_WHITELIST. Output should match the file we generate.
         if not config:
             return ''
+
         _config = []
-        for key in CONFIG_PARAMS:
-            value = config.get(key)
+        for key, value in config.iteritems():
             if value is None:
+                continue
+
+            # Check for values that match the IPFIX template or the whitelist
+            upper_key = key.upper()
+            if upper_key.startswith(IPFIX_PREFIX):
+                suffix = upper_key.rsplit('_', 1)
+                if (len(suffix) != 2) or (suffix[1] not in IPFIX_SUFFIXES):
+                    continue
+            elif key not in CONFIG_WHITELIST:
                 continue
 
             # Convert all values to strings, making sure truth values are lower
@@ -170,12 +191,12 @@ class ONA(Service):
 
             # Validate CIDR addresses that are passed in, and ensure that all
             # other configuration values don't contain illegal characters
-            if key == 'networks':
+            if upper_key == 'NETWORKS':
                 value = validate_pna_networks(value)
             elif ALLOWED_CHARS.match(value) is None:
                 continue
 
-            _config.append('OBSRVBL_{}="{}"'.format(key.upper(), value))
+            _config.append('OBSRVBL_{}="{}"'.format(upper_key, value))
 
         return '\n'.join(sorted(_config))
 
@@ -190,6 +211,15 @@ class ONA(Service):
         if site_config and site_config != self.current_config:
             logging.info('Configuration updated, reloading')
             self._write_config(site_config)
+            should_reload = True
+
+        # If we're monitoring network interfaces, check them and reload
+        # if there has been a change.
+        if (
+            self.network_ifaces is not None and
+            self.network_ifaces != self._get_network_ifaces()
+        ):
+            logging.info('Network interfaces changed, reloading')
             should_reload = True
 
         # If this is an --update-only run, send stats to the site and stop
