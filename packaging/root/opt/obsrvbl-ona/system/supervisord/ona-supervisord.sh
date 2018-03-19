@@ -17,7 +17,7 @@
 # Set up the environment
 cd /opt/obsrvbl-ona/
 . /opt/obsrvbl-ona/config
-export PYTHONPATH=/opt/obsrvbl-ona/ona_service/vendor
+export PYTHONPATH="/opt/obsrvbl-ona/system/python-packages"
 
 # Ensure the log directory exists
 mkdir -p /opt/obsrvbl-ona/logs/ona_service

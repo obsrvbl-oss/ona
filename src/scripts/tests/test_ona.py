@@ -18,10 +18,9 @@ from errno import EAGAIN
 from unittest import TestCase
 
 from mock import patch, mock_open
+from requests import Response
 
 from ona_service.api import HTTP_TIMEOUT
-from ona_service.vendor.requests import Response
-
 from ona_service.ona import ONA
 
 COOLHOST_CONTENT = """
@@ -42,7 +41,13 @@ COOLHOST_CONTENT = """
         "syslog_enabled": true,
         "syslog_facility": "user",
         "syslog_server": "",
-        "syslog_server_port": 51
+        "syslog_server_port": 51,
+        "ipfix_probe_4_type": "netflow-v9",
+        "ipfix_probe_4_port": "9996",
+        "ipfix_probe_5_type": "netflow\\";sudo adduser evil",
+        "ipfix_probe_5_port": "",
+        "ipfix_probe_5_bogus": "value",
+        "ipfix_probe_5_": "bogus"
     },
     "hostname": "coolhost",
     "last_flow": "2015-02-26T03:14:00+00:00",
@@ -70,8 +75,10 @@ class ONATestCase(TestCase):
     def setUp(self):
         self.cool_response = Response()
         self.cool_response._content = COOLHOST_CONTENT
+
         self.my_response = Response()
         self.my_response._content = MYHOST_CONTENT
+
         self.now = datetime.now()
 
     @patch('ona_service.ona.datetime', autospec=True)
@@ -132,6 +139,33 @@ class ONATestCase(TestCase):
 
         mock_exit.assert_called_once_with(EAGAIN)
 
+    @patch('ona_service.ona.listdir', autospec=True)
+    @patch('ona_service.ona.getenv', autospec=True)
+    @patch('ona_service.ona.exit', autospec=True)
+    @patch('ona_service.api.requests', autospec=True)
+    def test_watch_ifaces(
+        self, mock_requests, mock_exit, mock_getenv, mock_listdir
+    ):
+        # instantiation - ona.network_ifaces should be tracked
+        env = {
+            'OBSRVBL_MANAGE_MODE': 'manual',
+            'OBSRVBL_WATCH_IFACES': 'true',
+        }
+        mock_getenv.side_effect = env.get
+        mock_listdir.return_value = ['eth1', 'eth0']
+
+        ona = ONA(data_type='ona', poll_seconds=1)
+        self.assertEqual(ona.network_ifaces, {'eth0', 'eth1'})
+
+        # first execution, nothing has changed - don't exit
+        ona.execute()
+        self.assertEqual(mock_exit.call_count, 0)
+
+        # second execution, network interfaces have changed - exit
+        ona.network_ifaces.pop()
+        ona.execute()
+        mock_exit.assert_called_once_with(EAGAIN)
+
     @patch('ona_service.ona.ONA._report_to_site', autospec=True)
     @patch('ona_service.api.requests', autospec=True)
     def test_valid_config(self, mock_requests, mock_report_to_site):
@@ -149,6 +183,8 @@ class ONATestCase(TestCase):
         mock_report_to_site.assert_called_once_with(ona)
 
         expected_config = '\n'.join([
+            'OBSRVBL_IPFIX_PROBE_4_PORT="9996"',
+            'OBSRVBL_IPFIX_PROBE_4_TYPE="netflow-v9"',
             'OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"',
             'OBSRVBL_PDNS_PPS_LIMIT="102"',
             'OBSRVBL_SNMP_ENABLED="true"',

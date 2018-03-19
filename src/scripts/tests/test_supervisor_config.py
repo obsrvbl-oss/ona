@@ -71,6 +71,13 @@ class SupervisorConfigTestCase(TestCase):
         remove(self.infile_path)
         remove(self.outfile_path)
 
+    def test_module(self):
+        # Ensure that Supervisor is import-able
+        import supervisor.supervisord
+        self.assertEqual(
+            supervisor.supervisord.__name__, 'supervisor.supervisord'
+        )
+
     @patch('ona_service.supervisor_config.getenv', mock_getenv)
     def test_sections(self):
         self.inst.update()

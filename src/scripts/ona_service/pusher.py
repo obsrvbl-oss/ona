@@ -17,7 +17,7 @@ from __future__ import division, print_function, unicode_literals
 import logging
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from glob import iglob
 from os import remove
 from os.path import basename, getsize, join
@@ -32,6 +32,8 @@ from utils import create_dirs, utc
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+MAX_BACKLOG_DELTA = timedelta(days=2)
 
 
 class Pusher(Service):
@@ -157,7 +159,7 @@ class Pusher(Service):
         except (IOError, OSError):
             logging.warning('Could not remove {}.'.format(file_path))
 
-    def _send_archives(self):
+    def _send_archives(self, now):
         """
         Sends everything in the output directory using self.send_sensor_data,
         removing what's been successfully sent.
@@ -174,10 +176,13 @@ class Pusher(Service):
             if getsize(file_path) == 0:
                 continue
 
-            # Send the files, removing those that have been transmitted
-            if not self.send_sensor_data(file_path, whence):
-                logging.warning('Could not send %s', file_path)
-                continue
+            # Send the files, skipping very old ones and removing those that
+            # have been successfully transmitted
+            if (now - whence) < MAX_BACKLOG_DELTA:
+                if not self.send_sensor_data(file_path, whence):
+                    logging.warning('Could not send %s', file_path)
+                    continue
+
             self._remove_file(file_path)
 
     def _get_file_bins(self):
@@ -211,4 +216,4 @@ class Pusher(Service):
         self._create_archives(D_archive)
 
         # Send out the archive files we've collected and then remove them
-        self._send_archives()
+        self._send_archives(now)

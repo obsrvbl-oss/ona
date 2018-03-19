@@ -14,6 +14,7 @@ echo "OBSRVBL_MANAGE_MODE='${OBSRVBL_MANAGE_MODE:-manual}'" >> $local_config
 echo "OBSRVBL_NETWORKS='${OBSRVBL_NETWORKS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}'" >> $local_config
 echo "OBSRVBL_LOG_WATCHER='${OBSRVBL_LOG_WATCHER:-false}'" >> $local_config
 echo "OBSRVBL_SYSLOG_ENABLED='${OBSRVBL_SYSLOG_ENABLED:-true}'" >> $local_config
+echo "OBSRVBL_WATCH_IFACES='${OBSRVBL_WATCH_IFACES:-true}'" >> $local_config
 echo "OBSRVBL_SYSLOG_FACILITY='${OBSRVBL_SYSLOG_FACILITY:-user}'" >> $local_config
 echo "OBSRVBL_SYSLOG_SERVER='${OBSRVBL_SYSLOG_SERVER:-127.0.0.1}'" >> $local_config
 echo "OBSRVBL_SYSLOG_SERVER_PORT='${OBSRVBL_SYSLOG_SERVER_PORT:-514}'" >> $local_config

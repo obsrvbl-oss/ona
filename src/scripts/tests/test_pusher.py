@@ -24,7 +24,7 @@ from unittest import TestCase
 
 from mock import call as MockCall, MagicMock, patch
 
-from ona_service.pusher import Pusher
+from ona_service.pusher import Pusher, MAX_BACKLOG_DELTA
 from ona_service.utils import utc
 
 
@@ -88,14 +88,15 @@ class PusherTestBase(object):
         self.output_dir = self.inst.output_dir
         makedirs(self.output_dir)
 
+        self.now = datetime(2014, 3, 24, 14, 20, 30)
+
     def tearDown(self):
         rmtree(self.input_dir, ignore_errors=True)
         rmtree(self.output_dir, ignore_errors=True)
 
     def test_execute(self):
-        now = datetime(2014, 3, 24, 14, 20, 30, tzinfo=utc)
         self._touch_files()
-        self.inst.execute(now)
+        self.inst.execute(self.now)
 
         # Did the heartbeat go out?
         self.inst.api.send_signal.assert_called_once_with(
@@ -135,11 +136,31 @@ class PusherTestBase(object):
         # Did we delete the two groups?
         self.assertItemsEqual(listdir(self.output_dir), [])
 
+    def test_execute_backlog(self):
+        # Everything the same as the normal execute() test, but the time is
+        # later - enough later that we don't want to sendthe backlog.
+        self._touch_files()
+        self.inst.execute(self.now + MAX_BACKLOG_DELTA)
+
+        # Ready files archived and deleted
+        input_paths = [join(self.input_dir, x) for x in self.ready[0:2]]
+        self.assertFalse(any(exists(x) for x in input_paths))
+
+        input_paths = [join(self.input_dir, x) for x in self.ready[2:4]]
+        self.assertFalse(any(exists(x) for x in input_paths))
+
+        # Waiting items not touched
+        self.assertItemsEqual(listdir(self.input_dir), self.waiting)
+
+        # Nothing was sent, and the backlog was cleared
+        self.assertEqual(self.inst.send_sensor_data.call_args_list, [])
+        self.assertItemsEqual(listdir(self.output_dir), [])
+
     def test_execute_no_delete(self):
         self._touch_files()
         # If the sending failed...
         self.inst.send_sensor_data.return_value = False
-        self.inst.execute()
+        self.inst.execute(self.now)
         # Then the archives should not have been deleted
         self.assertItemsEqual(listdir(self.output_dir), self.output)
         # The tar files should still exist
@@ -167,7 +188,7 @@ class PusherTestBase(object):
         self._touch_files()
         # If we can't read one of the files...
         remove(join(self.input_dir, self.ready[0]))
-        self.inst.execute()
+        self.inst.execute(self.now)
 
         # ...it won't be added to the tar file.
         outfile_path = join(self.output_dir, self.output[0])

@@ -21,6 +21,7 @@ from unittest import TestCase
 
 from ona_service.api import (
     Api,
+    ENV_OBSRVBL_SENSOR_EXT_ONLY,
     ENV_OBSRVBL_SERVICE_KEY,
     HTTP_TIMEOUT,
     requests,
@@ -89,7 +90,12 @@ class ApiTestCase(TestCase):
             name='foo',
         )
         mock_requests.get.assert_called_once_with(
-            file_url, verify=True, timeout=HTTP_TIMEOUT, auth=self.auth)
+            file_url,
+            verify=True,
+            timeout=HTTP_TIMEOUT,
+            auth=self.auth,
+            headers={}
+        )
         mock_requests.get.return_value.raise_for_status.\
             assert_called_once_with()
 
@@ -128,7 +134,12 @@ class ApiTestCase(TestCase):
             name='foo_mp3',
         )
         mock_requests.get.assert_called_once_with(
-            file_url, verify=True, timeout=HTTP_TIMEOUT, auth=self.auth)
+            file_url,
+            verify=True,
+            timeout=HTTP_TIMEOUT,
+            auth=self.auth,
+            headers={}
+        )
         mock_requests.get.return_value.raise_for_status.\
             assert_called_once_with()
 
@@ -153,6 +164,36 @@ class ApiTestCase(TestCase):
             remote_path = self.api.send_file('mytype', f.name, time)
 
         self.assertIsNone(remote_path)
+
+    @patch('ona_service.api.getenv', autospec=True)
+    @patch('ona_service.api.requests', autospec=True)
+    def test_send_file_headers(self, mock_requests, mock_getenv):
+        # Ensure that the request gets sent with sensor_ext_only
+        mock_requests.get.return_value.json.return_value = {
+            'headers': 'headers!',
+            'url': 'url!',
+            'method': 'SUPERGET',
+            'path': 'remote_path!',
+        }
+        response = requests.Response()
+        response.status_code = REQUEST_ENTITY_TOO_LARGE
+        mock_requests.request.return_value = response
+
+        env_dict = {ENV_OBSRVBL_SENSOR_EXT_ONLY: 'true'}
+        mock_getenv.side_effect = env_dict.get
+
+        api = Api()
+
+        time = datetime.utcnow()
+        with NamedTemporaryFile() as f:
+            f.write("hee hee hee")
+            f.seek(0)
+            api.send_file('mytype', f.name, time)
+
+        self.assertEqual(
+            mock_requests.get.call_args[1]['headers'],
+            {'sensor-ext-only': 'true'}
+        )
 
     @patch('ona_service.api.requests', autospec=True)
     def test_send_signal(self, mock_requests):

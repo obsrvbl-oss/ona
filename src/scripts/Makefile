@@ -11,21 +11,28 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+PYTHONPATH ?= ../../packaging/root/opt/obsrvbl-ona/system/python-packages
+
 all: test
 
-requirements:
+vendor:
+	mkdir -p ${PYTHONPATH}
+	pip install --target="${PYTHONPATH}" -r requirements.txt
+	touch "${PYTHONPATH}/supervisor/__init__.py"
+
+requirements: vendor
 	pip install flake8 coverage nose mock
 
 flake8:
-	flake8 --max-complexity 10 --exclude=ona_service/vendor/ .
+	flake8 --max-complexity 10 .
 
 quicktest:
-	python -m nose --verbose --where=tests/ ${tests}
+	PYTHONPATH="${PYTHONPATH}" python -m nose --verbose --where=tests/ ${tests}
 
 test: requirements flake8 quicktest
 
 coverage: requirements flake8
-	coverage run -m nose --verbose --where="tests/"
+	PYTHONPATH="${PYTHONPATH}" coverage run -m nose --verbose --where="tests/"
 	coverage report
 
 clean:

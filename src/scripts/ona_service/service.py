@@ -20,7 +20,7 @@ from threading import Event
 from time import sleep
 
 # third-party
-from vendor.requests import exceptions as requests_exceptions
+from requests import exceptions as requests_exceptions
 
 # local
 from api import Api

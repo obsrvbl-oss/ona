@@ -1,7 +1,0 @@
-# Networks to listen on
-# - format is: <prefix>/<mask>/<netid>
-# - lower netids will be considered "local"
-# - remote networks have netid == 65535
-10.0.0.0/8/60000
-172.16.0.0/12/61000
-192.168.0.0/16/62000
