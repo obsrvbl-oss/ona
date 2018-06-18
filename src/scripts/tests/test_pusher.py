@@ -99,7 +99,7 @@ class PusherTestBase(object):
         self.inst.execute(self.now)
 
         # Did the heartbeat go out?
-        self.inst.api.send_signal.assert_called_once_with(
+        self.inst.api.send_signal.assert_any_call(
             data_type='heartbeat',
             data={
                 u'data_type': self.inst.data_type,

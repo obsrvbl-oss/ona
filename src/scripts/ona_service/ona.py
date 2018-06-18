@@ -71,6 +71,8 @@ CONFIG_WHITELIST = {
     'snmpv3_passphrase',
     'ipfix_replace_timestamps',
     'ipfix_reverse_directions',
+    'ETA_CAPTURE_MBITS',
+    'ETA_UDP_PORT',
     # ONA services
     'PNA_SERVICE',
     'LOG_WATCHER',
@@ -80,11 +82,12 @@ CONFIG_WHITELIST = {
     'SERVICE_OSSEC',
     'SERVICE_SURICATA',
     'IPFIX_CAPTURER',
+    'KUBERNETES_WATCHER',
+    'ETA_CAPTURER',
     # Other parameters
     'SERVICE_KEY',
     'PNA_IFACES',
     'PDNS_CAPTURE_IFACE',
-    'BRO_LOG_PATH',
     'HOSTNAME_DNS',
     'HOSTNAME_NETBIOS',
     'SENSOR_EXT_ONLY',

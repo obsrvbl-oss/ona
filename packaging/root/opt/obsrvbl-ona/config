@@ -141,6 +141,27 @@ OBSRVBL_CHECK_POINT_PUSHER="false"
 OBSRVBL_CHECK_POINT_LOGDIR="/opt/obsrvbl-ona/logs/check_point"
 OBSRVBL_CHECK_POINT_PATH="/var/log/check-point-fw.log"
 
+##
+# eta-capturer
+##
+OBSRVBL_ETA_CAPTURER="false"
+OBSRVBL_ETA_PCAP_DIR="/opt/obsrvbl-ona/logs/eta"
+OBSRVBL_ETA_CAPTURE_IFACE="any"
+OBSRVBL_ETA_CAPTURE_SECONDS="600"
+OBSRVBL_ETA_CAPTURE_MBITS="32"
+OBSRVBL_ETA_UDP_PORT="2055"
+
+##
+# nvzflow-monitor
+##
+OBSRVBL_NVZFLOW_CAPTURER="false"
+OBSRVBL_NVZFLOW_LOG_DIR="/opt/obsrvbl-ona/logs/nvzflow"
+
+##
+# kubernetes-watcher
+##
+OBSRVBL_KUBERNETES_WATCHER="false"
+
 
 # load up auto and local config
 [ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO

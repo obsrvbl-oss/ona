@@ -19,6 +19,9 @@ index.html
 images/iso/*.iso
 packaging/output/
 packaging/root/opt/obsrvbl-ona/netflow/
+packaging/root/opt/obsrvbl-ona/ipfix/
 packaging/root/opt/obsrvbl-ona/ona_service/
 packaging/root/opt/obsrvbl-ona/pna/
 packaging/root/opt/obsrvbl-ona/version
+packaging/root/opt/obsrvbl-ona/system/python-packages/*
+!packaging/root/opt/obsrvbl-ona/system/python-packages/LICENSE*

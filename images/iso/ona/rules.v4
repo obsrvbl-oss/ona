@@ -7,11 +7,10 @@
 -A INPUT -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
 -A OUTPUT -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
 
-# Inbound NetFlow
+# Inbound NetFlow - add other lines here
+-A INPUT -p udp --dport 2055 -m state --state NEW,ESTABLISHED -j ACCEPT
+-A INPUT -p udp --dport 4739 -m state --state NEW,ESTABLISHED -j ACCEPT
 -A INPUT -p udp --dport 9995 -m state --state NEW,ESTABLISHED -j ACCEPT
-
-# Inbound SFlow
-# -A INPUT -p udp --dport 6343 -m state --state NEW,ESTABLISHED -j ACCEPT
 
 # Outbound ping
 -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
