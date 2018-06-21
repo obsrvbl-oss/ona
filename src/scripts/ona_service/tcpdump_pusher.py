@@ -53,6 +53,7 @@ class TcpdumpPusher(Service):
         removes them.
         """
         logging.info('Pushing .pcap.gz files')
+        ret = []
         ts = now.replace(
             minute=(now.minute // 10) * 10,
             second=0,
@@ -63,11 +64,14 @@ class TcpdumpPusher(Service):
             self.pcap_dir, '{}_*.pcap.gz'.format(self.data_type)
         )
         for i, file_path in enumerate(sorted(iglob(glob_pattern))):
-            self.api.send_file(
+            remote_path = self.api.send_file(
                 self.data_type, file_path, ts, suffix='{:04}'.format(i)
             )
+            ret.append(remote_path)
             remove(file_path)
+
+        return ret
 
     def execute(self, now=None):
         self.compress_pcaps()
-        self.push_files(now)
+        return self.push_files(now)

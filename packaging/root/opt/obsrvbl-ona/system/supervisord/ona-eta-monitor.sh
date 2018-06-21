@@ -1,6 +1,6 @@
 #!/bin/sh
 
-#  Copyright 2015 Observable Networks
+#  Copyright 2018 Observable Networks
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,19 +17,20 @@
 cd /opt/obsrvbl-ona/
 
 # Ensure log directory exists
-mkdir -p $OBSRVBL_PDNS_PCAP_DIR
+mkdir -p $OBSRVBL_ETA_PCAP_DIR
 
 # Wait until the next interval
-sleep `expr $OBSRVBL_PDNS_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_PDNS_CAPTURE_SECONDS`
+sleep `expr $OBSRVBL_ETA_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_ETA_CAPTURE_SECONDS`
 
 # Run the monitor
 exec /usr/bin/sudo \
     /usr/sbin/tcpdump \
-        -w "$OBSRVBL_PDNS_PCAP_DIR/pdns_%s.pcap" \
-        -i "$OBSRVBL_PDNS_CAPTURE_IFACE" \
+        -w "$OBSRVBL_ETA_PCAP_DIR/logs_%s.pcap" \
+        -i "$OBSRVBL_ETA_CAPTURE_IFACE" \
         -s 0 \
-        -c `expr $OBSRVBL_PDNS_CAPTURE_SECONDS \* $OBSRVBL_PDNS_PPS_LIMIT` \
-        -G "$OBSRVBL_PDNS_CAPTURE_SECONDS" \
+        -C "$OBSRVBL_ETA_CAPTURE_MBITS" \
+        -G "$OBSRVBL_ETA_CAPTURE_SECONDS" \
+        -W "1" \
         -U \
         -Z "obsrvbl_ona" \
-        "udp src port 53"
+        "(udp dst port $OBSRVBL_ETA_UDP_PORT) and (udp[8:2] == 9)"
