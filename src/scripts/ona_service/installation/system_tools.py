@@ -376,6 +376,18 @@ class UbuntuXenial(SystemdMixin, DebianMixin, BaseSystem):
     """
 
 
+class UbuntuXenialContainer(DebianMixin, BaseSystem):
+    """
+    Supports Ubuntu Xenial and above, but skips the systemd service steps.
+    For use with Docker, etc.
+    """
+    def install_services(self):
+        pass
+
+    def start_service(self, service_name, instance=None):
+        pass
+
+
 class FreeBSD_10(BaseSystem):
     admin_group = 'wheel'
     sudoers_path = '/usr/local/etc/sudoers'

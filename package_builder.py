@@ -41,6 +41,9 @@ SYSTEM_INFO = {
     'UbuntuXenial': SystemInfo(
         'deb', ['adduser', 'python2.7', 'sudo', 'systemd-sysv', 'tcpdump']
     ),
+    'UbuntuXenialContainer': SystemInfo(
+        'deb', ['adduser', 'python2.7', 'sudo', 'net-tools', 'tcpdump']
+    ),
 }
 
 
