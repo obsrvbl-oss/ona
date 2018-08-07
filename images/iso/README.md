@@ -2,10 +2,10 @@
 
 Building the Ubuntu-based ONA install image *should* be as easy as running
 `create_iso.sh` on a Linux box. However, different distributions have
-different programs/paths/etc. so your milage may vary.
+different programs/paths/etc. so your mileage may vary.
 
-The sub-directories contain files that deviate from a standard Ubutnu
-server installation, if you add directories or rename files you may have to
+The sub-directories contain files that deviate from a standard Ubuntu
+server installation; if you add directories or rename files you may have to
 update `create_iso.sh` to reflect those changes.
 
 As the installation process may change (packages, commands, installers

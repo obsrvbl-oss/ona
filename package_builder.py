@@ -17,33 +17,30 @@ from argparse import ArgumentParser
 from collections import namedtuple
 from subprocess import check_call
 
+
 SystemInfo = namedtuple('SystemInfo', 'package_type,dependencies')
 
+REDHAT_COMMON = 'tcpdump',
+RASBPI_COMMON = 'tcpdump', 'adduser'
+UBUNTU_COMMON = 'tcpdump', 'adduser', 'python2.7', 'sudo'
+
 SYSTEM_INFO = {
-    'RaspbianWheezyUpstart': SystemInfo(
-        'deb', ['adduser', 'tcpdump', 'upstart']
-    ),
-    'RaspbianJessie': SystemInfo(
-        'deb', ['adduser', 'tcpdump']
-    ),
-    'RHEL_6': SystemInfo(
-        'rpm', ['tcpdump']
-    ),
-    'RHEL_7': SystemInfo(
-        'rpm', ['net-tools', 'python', 'sudo', 'tcpdump']
-    ),
-    'SE2Linux': SystemInfo(
-        'rpm', ['tcpdump']
-    ),
-    'UbuntuTrusty': SystemInfo(
-        'deb', ['adduser', 'python2.7', 'sudo', 'tcpdump']
-    ),
-    'UbuntuXenial': SystemInfo(
-        'deb', ['adduser', 'python2.7', 'sudo', 'systemd-sysv', 'tcpdump']
-    ),
-    'UbuntuXenialContainer': SystemInfo(
-        'deb', ['adduser', 'python2.7', 'sudo', 'net-tools', 'tcpdump']
-    ),
+    'SE2Linux':
+        SystemInfo('rpm', REDHAT_COMMON),
+    'RHEL_6':
+        SystemInfo('rpm', REDHAT_COMMON),
+    'RHEL_7':
+        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python', 'sudo')),
+    'RaspbianJessie':
+        SystemInfo('deb', RASBPI_COMMON),
+    'RaspbianWheezyUpstart':
+        SystemInfo('deb', RASBPI_COMMON + ('upstart',)),
+    'UbuntuTrusty':
+        SystemInfo('deb', UBUNTU_COMMON),
+    'UbuntuXenial':
+        SystemInfo('deb', UBUNTU_COMMON + ('systemd-sysv', 'net-tools')),
+    'UbuntuXenialContainer':
+        SystemInfo('deb', UBUNTU_COMMON + ('net-tools',)),
 }
 
 
@@ -62,19 +59,20 @@ def main(proc_arch, version, system_type):
         'fpm',
         '-s', 'dir',
         '-t', package_type,
-        '-n', 'ona-service',
-        '-v', version,
-        '-p', 'packaging/output/{}'.format(package_name),
+        '--name', 'ona-service',
+        '--version', version,
+        '--package', 'packaging/output/{}'.format(package_name),
         '--force',
         '--after-install', 'packaging/scripts/{}'.format(postinst_script),
         '--before-remove', 'packaging/scripts/{}'.format(prerm_script),
         '--after-remove', 'packaging/scripts/{}'.format(postrm_script),
         '--url', 'https://www.observable.net/',
         '--description', 'Observable Networks Sensor Appliance',
-        '-m', 'Observable Networks, Inc. <engineering@observable.net>',
+        '--maintainer',
+            'Observable Networks, Inc. <engineering@observable.net>',
         '--license', 'Apache License 2.0',
         '--vendor', 'obsrvbl.com',
-        '-a', proc_arch,
+        '--architecture', proc_arch,
         '--config-files', '/opt/obsrvbl-ona/config.auto',
         '--config-files', '/opt/obsrvbl-ona/config.local',
         compression_flag, 'bzip2',
@@ -87,10 +85,12 @@ def main(proc_arch, version, system_type):
 
     check_call(fpm_args)
 
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('proc_arch', help='Processor type')
     parser.add_argument('version', help='Version string')
-    parser.add_argument('system_type', help='Name of Linux system')
+    parser.add_argument('system_type', help='Name of Linux system',
+                        choices=sorted(SYSTEM_INFO))
     args = parser.parse_args()
     main(args.proc_arch, args.version, args.system_type)

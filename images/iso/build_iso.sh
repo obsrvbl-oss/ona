@@ -17,7 +17,7 @@
 # Build an Ubuntu-based ONA installation disc.
 #
 # Note of experience:
-#  - This is usually a very tempramental process, expect things to go
+#  - This is usually a very temperamental process, expect things to go
 #    wrong.
 #
 
@@ -48,27 +48,14 @@ suricata_url="https://s3.amazonaws.com/onstatic/suricata-service/master/suricata
 
 shift $(($OPTIND-1))
 
-if [ $(id -u) -eq "0" ] ; then
-    sudo=""
-else
-    sudo="sudo"
-fi
+test $EUID -ne 0 && sudo="sudo"
 
-ret=$(which mkisofs)
-if [ $ret -ne 0 ] ; then
-  echo "missing mkisofs: $sudo apt-get install genisoimage"
-  exit 1
-fi
+which mkisofs || (echo "missing mkisofs: $sudo apt-get install genisoimage" && false)
 
-ret=$(which isohybrid)
-if [ $ret -ne 0 ] ; then
-  echo "missing isohybrid: $sudo apt-get install syslinux-utils"
-  exit 1
-fi
+which isohybrid || (echo "missing isohybrid: $sudo apt-get install syslinux-utils" && false)
 
-
-mkdir $DIR/working
-pushd $DIR/working
+mkdir "$DIR"/working
+pushd "$DIR"/working
   curl -L -o ${ubuntu_name} "${ubuntu_url}"
   curl -L -o suricata-service.deb "${suricata_url}"
   mkdir cdrom local
@@ -88,4 +75,4 @@ pushd $DIR/working
   $sudo chown $USER:$USER "../${ona_name}"
   isohybrid "../${ona_name}"
 popd
-$sudo rm -rf $DIR/working
+$sudo rm -rf "$DIR"/working
