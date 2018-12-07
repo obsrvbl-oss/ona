@@ -117,6 +117,7 @@ class LogNode(WatchNode):
             api: api for interacting with the proxy
         """
         self.encoding = kwargs.pop('encoding', None)
+        self.errors = kwargs.pop('errors', 'ignore')
         self.log_path = log_path
         self.log_file = None
         self.log_file_inode = None
@@ -126,7 +127,10 @@ class LogNode(WatchNode):
     def _set_fd(self, seek_to_end=False):
         try:
             self.log_file = io.open(
-                self.log_path, mode='r', encoding=self.encoding
+                self.log_path,
+                mode='r',
+                encoding=self.encoding,
+                errors=self.errors,
             )
         except (IOError, OSError) as err:
             logging.error('Could not open %s: %s', self.log_path, err)
@@ -137,9 +141,9 @@ class LogNode(WatchNode):
 
         # Read the the end of the last line of the file
         if seek_to_end:
-            data = self.log_file.readlines()
+            line_count = sum(1 for line in self.log_file)
             msg = 'Scraping from %s - skipped %s lines'
-            logging.info(msg, self.log_path, len(data))
+            logging.info(msg, self.log_path, line_count)
 
     def cleanup(self):
         try:

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #  Copyright 2015 Observable Networks
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +15,7 @@
 from __future__ import print_function, unicode_literals
 
 import gzip
+import io
 
 from collections import namedtuple
 from datetime import datetime, timedelta
@@ -295,19 +297,50 @@ class LogNodeTestCase(TestCase):
         self.assertIsNone(self.node.log_file)
         self.assertIsNone(self.node.log_file_inode)
 
-    def test__set_fd(self):
+    @patch('ona_service.log_watcher.logging', autospec=True)
+    def test__set_fd(self, mock_logging):
         with open(self.dummy_file, 'w') as f:
-            f.write('hello world')
+            print('Here is a line', file=f)
+            print('Here is another line', file=f)
 
         self.node._set_fd()
         inode1 = self.node.log_file_inode
         with open(self.dummy_file, 'r') as f:
             contents = f.read()
         self.assertEqual(self.node.log_file.read(), contents)
+
         self.node._set_fd(seek_to_end=True)
         inode2 = self.node.log_file_inode
         self.assertEqual(self.node.log_file.read(), '')
         self.assertEqual(inode1, inode2)
+
+        log_args = mock_logging.info.call_args[0]
+        log_message = log_args[0] % log_args[1:]
+        self.assertIn('skipped 2 lines', log_message)
+
+    def test_encoding(self):
+        node = LogNode('one', None, self.dummy_file, encoding='cp1252')
+
+        with io.open(self.dummy_file, 'wb') as f:
+            print(b'Here\x9cs a line', file=f)
+
+        node.check_data(self.now)
+
+        actual = node.data[0].encode('cp1252')
+        expected = b'Here\x9cs a line\n'
+        self.assertEqual(actual, expected)
+
+    def test_encoding_error(self):
+        node = LogNode('one', None, self.dummy_file)
+
+        with io.open(self.dummy_file, 'wb') as f:
+            print(b'Here\x9cs a line', file=f)
+
+        node.check_data(self.now)
+
+        actual = node.data[0]
+        expected = 'Heres a line\n'
+        self.assertEqual(actual, expected)
 
 
 class SystemdJournalNodeTestCase(TestCase):

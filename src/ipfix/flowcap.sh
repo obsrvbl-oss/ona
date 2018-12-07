@@ -18,6 +18,16 @@ mkdir -p "$OBSRVBL_IPFIX_LOGDIR"
 
 ROTATE_PERIOD=60
 
+if [ "$OBSRVBL_FLOWCAP_MAX_FILE_SIZE" = "" ]
+then
+   OBSRVBL_FLOWCAP_MAX_FILE_SIZE=104857600
+fi
+
+if [ "$OBSRVBL_FLOWCAP_LOG_LEVEL" = "" ]
+then
+   OBSRVBL_FLOWCAP_LOG_LEVEL="warning"
+fi
+
 export TZ="Etc/UTC"
 export SILK_LIBFIXBUF_SUPPRESS_WARNINGS="1"
 
@@ -27,10 +37,10 @@ export SILK_LIBFIXBUF_SUPPRESS_WARNINGS="1"
 exec /opt/silk/sbin/flowcap \
     --destination-directory="$OBSRVBL_IPFIX_LOGDIR" \
     --sensor-configuration="$OBSRVBL_IPFIX_CONF" \
-    --max-file-size="104857600" \
+    --max-file-size="$OBSRVBL_FLOWCAP_MAX_FILE_SIZE" \
     --timeout="$ROTATE_PERIOD" \
     --clock-time="$ROTATE_PERIOD" \
     --compression-method="none" \
     --log-destination="stdout" \
-    --log-level="warning" \
+    --log-level="$OBSRVBL_FLOWCAP_LOG_LEVEL" \
     --no-daemon
