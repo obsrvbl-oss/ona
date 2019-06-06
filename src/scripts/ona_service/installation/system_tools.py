@@ -30,7 +30,6 @@ ONA_NAME_PREFIX = 'ona-'
 class BaseSystem(object):
     logs_group = 'adm'
     admin_group = 'root'
-    sudoers_path = '/etc/sudoers'
 
     def add_user(self):
         """
@@ -320,50 +319,6 @@ class RHEL_7(SystemdMixin, RedHatMixin, BaseSystem):
     """
 
 
-class SE2Linux(SystemdMixin, BusyBoxMixin, BaseSystem):
-    """
-    SE2Linux for embedded systems.
-    """
-
-    def set_sudoer(self):
-        """
-        Allows the ONA user to execute certain commands as root, sans password.
-        This is crazy dangerous, so we use visudo to ensure that the changes we
-        make are valid.
-        """
-        # Step 0: Check to see if the obsrvbl_ona entries are already present
-        command = 'grep {} {} > /dev/null'.format(
-            OBSRVBL_USER, self.sudoers_path
-        )
-        return_code = call([command], shell=True)
-        if return_code == 0:
-            print(
-                '{} is already in {}'.format(OBSRVBL_USER, self.sudoers_path)
-            )
-            return
-
-        # Step 1: Concatenate the original file and our additions to a
-        # new file.
-        # Step 2: Use visudo to check that the new file is valid.
-        # Step 3: Verify that the new file is owned by the root user and group
-        # Step 4: Set the new file's read/write/execute permissions to 0440
-        # Step 5: Replace the original file
-        src_path = join(OBSRVBL_ROOT, 'system', 'obsrvbl_ona.sudoers')
-        tmp_path = join(OBSRVBL_ROOT, 'system', 'sudoers.tmp')
-        for command in (
-            'cat {} {} > {}'.format(self.sudoers_path, src_path, tmp_path),
-            'visudo -c -f {}'.format(tmp_path),
-            'chown root:{} {}'.format(self.admin_group, tmp_path),
-            'chmod 0440 {}'.format(tmp_path),
-            'mv {} {}'.format(tmp_path, self.sudoers_path),
-        ):
-            return_code = call([command], shell=True)
-
-            if return_code != 0:
-                print('Failed during: {}'.format(command))
-                return
-
-
 class UbuntuTrusty(UpstartMixin, DebianMixin, BaseSystem):
     """
     Supports Ubuntu installations with the upstart init system.
@@ -386,44 +341,3 @@ class UbuntuXenialContainer(DebianMixin, BaseSystem):
 
     def start_service(self, service_name, instance=None):
         pass
-
-
-class FreeBSD_10(BaseSystem):
-    admin_group = 'wheel'
-    sudoers_path = '/usr/local/etc/sudoers'
-
-    def add_user(self):
-        # Don't create a user that already exists
-        if OBSRVBL_USER in self.get_users():
-            return
-
-        args = [
-            'pw', 'useradd',
-            '-n', OBSRVBL_USER,  # User name
-            '-d', OBSRVBL_ROOT,  # Home directory
-            '-s', '/sbin/nologin'  # No shell access allowed
-        ]
-        call(args)
-
-    def install_services(self):
-        src_path = join(
-            OBSRVBL_ROOT, 'system/bsd-init/{}'.format(OBSRVBL_SERVICE)
-        )
-        dst_path = '/etc/rc.d/{}'.format(OBSRVBL_SERVICE)
-        copy(src_path, dst_path)
-        call(['chmod', '0555', dst_path])
-
-    def set_user_group(self):
-        pass
-
-    def start_service(self, service_name, instance=None):
-        return_code = call(['sudo', 'service', service_name, 'start'])
-
-        if return_code != 0:
-            err_msg = 'Error starting {}: {}'.format(service_name, return_code)
-            raise RuntimeError(err_msg)
-
-    def stop_service(self, service_name, instance=None):
-        return_code = call(['sudo', 'service', service_name, 'stop'])
-
-        return return_code

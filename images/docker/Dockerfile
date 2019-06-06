@@ -1,5 +1,5 @@
 FROM ubuntu:18.04
-MAINTAINER Observable Networks "support@obsrvbl.com"
+LABEL maintainer="Observable Networks <support@obsrvbl.com>"
 
 # Install dependencies.
 RUN apt-get update && apt-get install -y --fix-missing adduser curl net-tools python2.7 sudo tcpdump

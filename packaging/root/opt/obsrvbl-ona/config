@@ -73,11 +73,6 @@ OBSRVBL_OSSEC_ALERTS_PATH="/opt/obsrvbl-ossec/logs/alerts/alerts.json"
 OBSRVBL_SERVICE_SURICATA="false"
 
 ##
-# ona-nmapper
-##
-OBSRVBL_NMAPPER="false"
-
-##
 # YAF, IPFIX, Netflow
 ##
 OBSRVBL_YAF_CAPTURER="false"
@@ -115,13 +110,6 @@ OBSRVBL_IPFIX_CONF="/opt/obsrvbl-ona/ipfix/sensor.conf"
 # sFlow exporter
 # OBSRVBL_IPFIX_PROBE_6_TYPE="sflow"
 # OBSRVBL_IPFIX_PROBE_6_PORT="6343"
-
-##
-# ona-share-watcher
-##
-OBSRVBL_SHARE_WATCHER="false"
-OBSRVBL_SHARE_DIR="/opt/obsrvbl-ona/share/"
-OBSRVBL_SHARE_WORKGROUP="WORKGROUP"
 
 # If monitoring a remote share set the read-only flag to true
 # Also specify the IP address of the share's host

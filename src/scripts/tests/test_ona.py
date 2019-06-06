@@ -11,202 +11,199 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import print_function, unicode_literals
+
+import io
 import platform
 
 from datetime import datetime
-from errno import EAGAIN
+from os.path import join
+from shutil import rmtree
+from tempfile import mkdtemp
 from unittest import TestCase
 
-from mock import patch, mock_open
-from requests import Response
+from mock import patch, MagicMock
 
-from ona_service.api import HTTP_TIMEOUT
 from ona_service.ona import ONA
-
-COOLHOST_CONTENT = """
-{
-    "active": false,
-    "config": {
-        "authoritative_dns_only": true,
-        "pdns_pps_limit": 102,
-        "networks": "10.0.0.0/8\\r\\n172.16.0.0/12\\r\\n192.168.0.0/16",
-        "snmp_enabled": true,
-        "snmp_objectid": "1.3.6.1.4.1.3375.2.100",
-        "snmp_server": "127.0.0.1",
-        "snmp_server_port": 162,
-        "snmp_user": "public",
-        "snmp_version": 2,
-        "snmpv3_engineid": "\\";sudo adduser evil",
-        "snmpv3_passphrase": null,
-        "syslog_enabled": true,
-        "syslog_facility": "user",
-        "syslog_server": "",
-        "syslog_server_port": 51,
-        "ipfix_probe_4_type": "netflow-v9",
-        "ipfix_probe_4_port": "9996",
-        "ipfix_probe_5_type": "netflow\\";sudo adduser evil",
-        "ipfix_probe_5_port": "",
-        "ipfix_probe_5_bogus": "value",
-        "ipfix_probe_5_": "bogus"
-    },
-    "hostname": "coolhost",
-    "last_flow": "2015-02-26T03:14:00+00:00",
-    "last_hb": "2015-02-26T19:57:44+00:00",
-    "last_sensor_data": {},
-    "resource_uri": "/api/v2/sensors/sensors/coolhost/",
-    "sensor_type": "pna"
-}
-"""
-MYHOST_CONTENT = """
-{
-    "active": false,
-    "config": null,
-    "hostname": "myhost",
-    "last_flow": "2015-02-26T03:14:00+00:00",
-    "last_hb": "2015-02-26T19:57:44+00:00",
-    "last_sensor_data": {},
-    "resource_uri": "/api/v2/sensors/sensors/myhost/",
-    "sensor_type": "pna"
-}
-"""
+from ona_service.utils import utc
 
 
-class ONATestCase(TestCase):
+class ONAServiceTests(TestCase):
     def setUp(self):
-        self.cool_response = Response()
-        self.cool_response._content = COOLHOST_CONTENT
+        self.temp_dir = mkdtemp()
 
-        self.my_response = Response()
-        self.my_response._content = MYHOST_CONTENT
+        # Touch a new auto configuration file
+        self.auto_config_path = join(self.temp_dir, 'config.auto')
+        with io.open(self.auto_config_path, 'wt'):
+            pass
 
-        self.now = datetime.now()
+    def tearDown(self):
+        rmtree(self.temp_dir)
 
-    @patch('ona_service.ona.datetime', autospec=True)
-    @patch('ona_service.api.requests', autospec=True)
-    def test__report_to_site(self, mock_requests, mock_datetime):
-        mock_datetime.now.return_value = self.now
+    def _get_instance(self, update_only, env=None):
+        env = env or {}
+        with patch.dict('ona_service.ona.environ', env):
+            ona = ONA(
+                config_file=self.auto_config_path,
+                poll_seconds=0,
+                update_only=update_only,
+            )
+            ona.api = MagicMock()
+            ona.api.proxy_uri = 'https://127.0.0.1:8080'
+            ona.api.ona_name = 'ona-test-01'
 
-        mo = mock_open(read_data='my_version')
-        with patch('ona_service.ona.open', mo, create=True):
-            ona = ONA(data_type='ona', poll_seconds=1, update_only=True)
-            ona._report_to_site()
+            return ona
 
-        node = platform.node()
-        mock_requests.post.assert_called_once_with(
-            'https://sensor.ext.obsrvbl.com/signal/sensors/{}'.format(node),
-            verify=True,
-            timeout=HTTP_TIMEOUT,
+    def test_update_only(self):
+        # On the first "update only" run, stats should be sent to the site
+        instance = self._get_instance(update_only=True)
+        now = datetime.now(utc)
+        instance.execute(now=now)
+        instance.api.send_signal.assert_called_once_with(
+            'sensors',
             data={
+                'last_start': now.isoformat(),
                 'platform': platform.platform(),
                 'python_version': platform.python_version(),
+                'ona_version': 'unknown',
                 'config_mode': 'manual',
-                'ona_version': 'my_version',
-                'last_start': self.now.isoformat(),
+            }
+        )
+        self.assertTrue(instance.stop_event.is_set())
+
+    def test_update_only_reload(self):
+        # On the first "update only" run, stats should be sent to the site.
+        # We should reload, since the site had something for us to change.
+        env = {'OBSRVBL_MANAGE_MODE': 'auto'}
+        instance = self._get_instance(update_only=True, env=env)
+        instance.api.get_data.return_value.json.return_value = {
+            'config': {'pdns_pps_limit': 102},
+        }
+        now = datetime.now(utc)
+        with self.assertRaises(SystemExit):
+            instance.execute(now=now)
+
+        instance.api.send_signal.assert_called_once_with(
+            'sensors',
+            data={
+                'last_start': now.isoformat(),
+                'platform': platform.platform(),
+                'python_version': platform.python_version(),
+                'ona_version': 'unknown',
+                'config_mode': 'auto',
             }
         )
 
-    def test__load_config(self):
-        file_contents = 'MYVAR="awesome"\n\n'
-        mo = mock_open(read_data=file_contents)
-        ona = ONA(data_type='ona', poll_seconds=1)
+    def test_manual_config(self):
+        # If configuration mode is not "auto", we shouldn't check for updates
+        env = {'OBSRVBL_MANAGE_MODE': 'manual'}
+        instance = self._get_instance(update_only=False, env=env)
+        instance.execute()
+        instance.api.get_data.assert_not_called()
 
-        with patch('ona_service.ona.open', mo, create=True):
-            config = ona._load_config()
-        self.assertEqual(config, file_contents.strip())
+    def test_auto_config(self):
+        # If configuration mode is not "auto", we should check for updates
+        env = {'OBSRVBL_MANAGE_MODE': 'auto'}
+        instance = self._get_instance(update_only=False, env=env)
+        instance.execute()
+        instance.api.get_data.assert_any_call('sensors/ona-test-01')
 
-        mo.side_effect = IOError()
-        with patch('ona_service.ona.open', mo, create=True):
-            config = ona._load_config()
-        self.assertEqual(config, '')
+    def test_auto_config_reload(self):
+        # If the configuration changes we should expect an exit
+        env = {'OBSRVBL_MANAGE_MODE': 'auto'}
+        instance = self._get_instance(update_only=False, env=env)
+        instance.api.get_data.return_value.json.return_value = {
+            'config': {
+                'HOST': '127.0.0.1',
+                'pdns_pps_limit': 102,
+            },
+        }
+        with self.assertRaises(SystemExit):
+            instance.execute()
 
-    @patch('ona_service.ona.exit', autospec=True)
-    @patch('ona_service.api.requests', autospec=True)
-    def test_check_config(self, mock_requests, mock_exit):
-        ona = ONA(data_type='ona', poll_seconds=1)
-        ona.config_mode = 'auto'
+        # The parameters from the host should be saved
+        with io.open(self.auto_config_path, 'rt') as infile:
+            actual = infile.read().splitlines()
+            expected = [
+                'OBSRVBL_HOST="https://127.0.0.1"',
+                'OBSRVBL_PDNS_PPS_LIMIT="102"'
+            ]
+            self.assertEqual(actual, expected)
 
-        # first execution, nothing has changed - don't exit
-        mock_requests.get.return_value = self.my_response
-        with patch('ona_service.ona.open', mock_open(), create=True):
-            ona.execute()
+    def test_config_auto_rules(self):
+        env = {'OBSRVBL_MANAGE_MODE': 'auto'}
+        instance = self._get_instance(update_only=False, env=env)
+        instance.api.get_data.return_value.json.return_value = {
+            'config': {
+                # Valid rules
+                "ipfix_probe_4_type": "netflow-v9",
+                "ipfix_probe_4_port": "9996",
+                "PNA_SERVICE": True,
+                "HOSTNAME_RESOLVER": False,
+                "pdns_pps_limit": 102,
+                "SERVICE_KEY": "MyServiceKey",
+                "networks": "10.0.0.0/8\r\n172.16.0.0/12\r\n192.168.0.0/16",
+                # Incorrect IPFIX rule
+                "ipfix_probe_4_bogus_thing": "yolo",
+                # Non-whitelisted setting
+                "mykey": "myvalue",
+                # Non-whitelisted character
+                "snmp_server": '";sudo adduser evil',
+                "HOST": 'https://127.0.0.1;sudo adduser evil',
+            }
+        }
+        with self.assertRaises(SystemExit):
+            instance.execute()
 
-        self.assertEqual(mock_exit.call_count, 0)
-
-        # second execution, config has changed - exit
-        mock_requests.get.return_value = self.cool_response
-        with patch('ona_service.ona.open', mock_open(), create=True):
-            ona.execute()
-
-        mock_exit.assert_called_once_with(EAGAIN)
+        with io.open(self.auto_config_path, 'rt') as infile:
+            actual = infile.read().splitlines()
+            expected = [
+                'OBSRVBL_IPFIX_PROBE_4_TYPE="netflow-v9"',
+                'OBSRVBL_IPFIX_PROBE_4_PORT="9996"',
+                'OBSRVBL_PNA_SERVICE="true"',
+                'OBSRVBL_HOSTNAME_RESOLVER="false"',
+                'OBSRVBL_PDNS_PPS_LIMIT="102"',
+                'OBSRVBL_SERVICE_KEY="MyServiceKey"',
+                'OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"',
+            ]
+            self.assertItemsEqual(actual, expected)
 
     @patch('ona_service.ona.listdir', autospec=True)
-    @patch('ona_service.ona.getenv', autospec=True)
-    @patch('ona_service.ona.exit', autospec=True)
-    @patch('ona_service.api.requests', autospec=True)
-    def test_watch_ifaces(
-        self, mock_requests, mock_exit, mock_getenv, mock_listdir
-    ):
-        # instantiation - ona.network_ifaces should be tracked
-        env = {
-            'OBSRVBL_MANAGE_MODE': 'manual',
-            'OBSRVBL_WATCH_IFACES': 'true',
-        }
-        mock_getenv.side_effect = env.get
-        mock_listdir.return_value = ['eth1', 'eth0']
+    def test_watch_ifaces_enabled(self, mock_listdir):
+        # We're watching interfaces, and when we check nothing has changed
+        env = {'OBSRVBL_WATCH_IFACES': 'true'}
+        mock_listdir.return_value = ['eth0']
+        instance = self._get_instance(update_only=False, env=env)
+        instance.execute()
 
-        ona = ONA(data_type='ona', poll_seconds=1)
-        self.assertEqual(ona.network_ifaces, {'eth0', 'eth1'})
+        # Now something has changed, so we should reload
+        mock_listdir.return_value = ['eth0', 'eth1']
+        with self.assertRaises(SystemExit):
+            instance.execute()
 
-        # first execution, nothing has changed - don't exit
-        ona.execute()
-        self.assertEqual(mock_exit.call_count, 0)
+    @patch('ona_service.ona.listdir', autospec=True)
+    def test_watch_ifaces_disabled(self, mock_listdir):
+        # We're not watching interfaces, so nothing should reload
+        mock_listdir.return_value = ['eth0']
+        instance = self._get_instance(update_only=False)
+        instance.execute()
 
-        # second execution, network interfaces have changed - exit
-        ona.network_ifaces.pop()
-        ona.execute()
-        mock_exit.assert_called_once_with(EAGAIN)
+        # We shouldn't reload, even though the interfaces have changed
+        mock_listdir.return_value = ['eth0', 'eth1']
+        instance.execute()
 
-    @patch('ona_service.ona.ONA._report_to_site', autospec=True)
-    @patch('ona_service.api.requests', autospec=True)
-    def test_valid_config(self, mock_requests, mock_report_to_site):
-        mo = mock_open(read_data='my_version')
-        mock_requests.get.return_value = self.cool_response
+        # In fact, we shouldn't have even checked
+        mock_listdir.assert_not_called()
 
-        with patch('ona_service.ona.open', mo, create=True):
-            ona = ONA(data_type='ona', poll_seconds=1, update_only=True)
-            ona.config_mode = 'auto'
-            # The configuration update should cause the service to exit
-            # with a special return code
-            with self.assertRaises(SystemExit):
-                ona.execute()
+    def test_no_host(self):
+        # The server doesn't know the sensor
+        def _get_data(endpoint):
+            ret = MagicMock()
+            ret.json.return_value = {'error': 'unknown identity'}
+            return ret
 
-        mock_report_to_site.assert_called_once_with(ona)
-
-        expected_config = '\n'.join([
-            'OBSRVBL_IPFIX_PROBE_4_PORT="9996"',
-            'OBSRVBL_IPFIX_PROBE_4_TYPE="netflow-v9"',
-            'OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"',
-            'OBSRVBL_PDNS_PPS_LIMIT="102"',
-            'OBSRVBL_SNMP_ENABLED="true"',
-            'OBSRVBL_SNMP_OBJECTID="1.3.6.1.4.1.3375.2.100"',
-            'OBSRVBL_SNMP_SERVER="127.0.0.1"',
-            'OBSRVBL_SNMP_SERVER_PORT="162"',
-            'OBSRVBL_SNMP_USER="public"',
-            'OBSRVBL_SNMP_VERSION="2"',
-            'OBSRVBL_SYSLOG_ENABLED="true"',
-            'OBSRVBL_SYSLOG_FACILITY="user"',
-            'OBSRVBL_SYSLOG_SERVER_PORT="51"',
-        ])
-        mo().write.assert_called_once_with(expected_config)
-
-    @patch('ona_service.ona.ONA._write_config', autospec=True)
-    @patch('ona_service.api.requests', autospec=True)
-    def test_valid_no_config(self, mock_requests, mock_write_config):
-        mock_requests.get.return_value = self.my_response
-        ona = ONA(data_type='ona', poll_seconds=1, update_only=True)
-        ona.config_mode = 'auto'
-
-        with patch('ona_service.ona.open', mock_open(), create=True):
-            ona.execute()
-
-        self.assertEqual(mock_write_config.call_count, 0)
+        # Therefore there's no reload
+        env = {'OBSRVBL_MANAGE_MODE': 'auto'}
+        instance = self._get_instance(update_only=False, env=env)
+        instance.api.get_data.side_effect = _get_data
+        instance.execute()

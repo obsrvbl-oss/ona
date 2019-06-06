@@ -82,12 +82,6 @@ PROGRAM_COMMANDS = {
     'ona-suricata-alert-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/suricata_alert_watcher.py'
     ],
-    'ona-nmapper': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/nmapper.py'
-    ],
-    'ona-share-watcher': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/share_watcher.py'
-    ],
     'ona-ipfix-pusher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/ipfix_pusher.py'
     ],
@@ -127,8 +121,6 @@ ENABLE_FLAGS = [
     ('OBSRVBL_SERVICE_OSSEC', ['ona-ossec-alert-watcher']),
     ('OBSRVBL_SERVICE_SURICATA', ['ona-suricata-alert-watcher']),
     ('OBSRVBL_LOG_WATCHER', ['ona-log-watcher']),
-    ('OBSRVBL_NMAPPER', ['ona-nmapper']),
-    ('OBSRVBL_SHARE_WATCHER', ['ona-share-watcher']),
     ('OBSRVBL_IPFIX_CAPTURER', ['ona-ipfix-monitor', 'ona-ipfix-pusher']),
     ('OBSRVBL_SYSLOG_AD_WATCHER', ['ona-syslog-ad-watcher']),
     ('OBSRVBL_CHECK_POINT_PUSHER', ['ona-check-point-pusher']),

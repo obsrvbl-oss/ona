@@ -23,7 +23,7 @@ d-i netcfg/get_hostname string ona-default
 # Add the network and tasks oem-config steps by default.
 oem-config	oem-config/steps	multiselect language, timezone, keyboard, user, network, tasks
 # Extra packages to make sure are installed (Observable)
-d-i	pkgsel/include	string apt-transport-https iptables-persistent libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano nmap ntp ntpdate python-psutil python2.7 snmp tcpdump
+d-i	pkgsel/include	string apt-transport-https iptables-persistent ipset libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano ntp ntpdate python-psutil python2.7 snmp tcpdump
 # Don't prompt user to save iptables.
 iptables-persistent iptables-persistent/autosave_v6 boolean false
 iptables-persistent iptables-persistent/autosave_v4 boolean false

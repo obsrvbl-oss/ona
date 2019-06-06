@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ARCH ?= amd64
-VERSION := 1.0
-SHA := $(shell git rev-parse --short HEAD)
+VERSION := 4.0.0
 
 SCRIPTS_DIR := src/scripts
 uPNA_DIR := src/uPNA
-NETFLOW_DIR := src/netflow
 IPFIX_DIR := src/ipfix
 
 OBSRVBL_ROOT := packaging/root/opt/obsrvbl-ona
@@ -41,7 +39,7 @@ build:
 copy:
 	make -C ${SCRIPTS_DIR} vendor
 	mkdir -p ${OBSRVBL_ROOT}/
-	git rev-parse HEAD > ${OBSRVBL_ROOT}/version
+	echo ${VERSION} > ${OBSRVBL_ROOT}/version
 	mkdir -p ${OBSRVBL_ROOT}/pna/user/
 	cp ${uPNA_DIR}/module/pna ${OBSRVBL_ROOT}/pna/user/pna
 	mkdir -p ${OBSRVBL_ROOT}/ipfix/

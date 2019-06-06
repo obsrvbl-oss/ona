@@ -1,12 +1,12 @@
 # Building the ONA Installation Image #
 
 Building the Ubuntu-based ONA install image *should* be as easy as running
-`create_iso.sh` on a Linux box. However, different distributions have
+`build_iso.sh` on a Linux box. However, different distributions have
 different programs/paths/etc. so your mileage may vary.
 
 The sub-directories contain files that deviate from a standard Ubuntu
 server installation; if you add directories or rename files you may have to
-update `create_iso.sh` to reflect those changes.
+update `build_iso.sh` to reflect those changes.
 
 As the installation process may change (packages, commands, installers
 sometimes change as distributions get updated), there may be breakage when
@@ -21,4 +21,10 @@ moving to a new version of Ubuntu.
 
 ## References ##
 
-1. https://help.ubuntu.com/community/InstallCDCustomization
+1. Ubuntu's community documentation on [customizing installation CDs](https://help.ubuntu.com/community/InstallCDCustomization)
+2. Detailed example preseed file:
+
+    ```
+    $ apt install installation-guide-amd64
+    $ zcat /usr/share/doc/installation-guide-amd64/example-preseed.txt.gz
+    ```
