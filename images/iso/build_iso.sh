@@ -21,10 +21,10 @@
 #    wrong.
 #
 
-RELEASE="${RELEASE:-16.04.2}"
+RELEASE="${RELEASE:-18.04.1}"
 ARCH="${ARCH:-amd64}"
 
-UBUNTU="http://releases.ubuntu.com"
+UBUNTU="http://cdimage.ubuntu.com/ubuntu/releases"
 
 DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 
@@ -43,29 +43,28 @@ done
 
 ubuntu_name="ubuntu-${RELEASE}-server-${ARCH}.iso"
 ona_name="ona-${RELEASE}-server-${ARCH}.iso"
-ubuntu_url="${url:-${UBUNTU}/${RELEASE}/${ubuntu_name}}"
+ubuntu_url="${url:-${UBUNTU}/${RELEASE}/release/${ubuntu_name}}"
 suricata_url="https://s3.amazonaws.com/onstatic/suricata-service/master/suricata-service.deb"
 
 shift $(($OPTIND-1))
 
 test $EUID -ne 0 && sudo="sudo"
-
 which mkisofs || (echo "missing mkisofs: $sudo apt-get install genisoimage" && false)
-
 which isohybrid || (echo "missing isohybrid: $sudo apt-get install syslinux-utils" && false)
 
 mkdir "$DIR"/working
+test -f ${ubuntu_name} && cp ${ubuntu_name} working && echo "using local ${ubuntu_name}" || echo "downloading ${ubuntu_name}"
 pushd "$DIR"/working
-  curl -L -o ${ubuntu_name} "${ubuntu_url}"
+  test -f ${ubuntu_name} || curl -L -o ${ubuntu_name} "${ubuntu_url}"
   curl -L -o suricata-service.deb "${suricata_url}"
   mkdir cdrom local
   $sudo mount -o loop "${ubuntu_name}" cdrom
-  rsync -av cdrom/ local
+  rsync -av --quiet cdrom/ local
   $sudo cp ../preseed/* local/preseed/
   $sudo cp -r ../ona local
   $sudo cp -r suricata-service.deb local/ona/suricata-service.deb
   $sudo cp ../isolinux/txt.cfg local/isolinux/txt.cfg
-  $sudo mkisofs -r -V "Observable Networks Install CD" \
+  $sudo mkisofs -quiet -r -V "Observable Networks Install CD" \
           -cache-inodes \
           -J -l -b isolinux/isolinux.bin \
           -c isolinux/boot.cat -no-emul-boot \

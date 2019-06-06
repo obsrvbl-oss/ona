@@ -25,10 +25,8 @@ RASBPI_COMMON = 'tcpdump', 'adduser'
 UBUNTU_COMMON = 'tcpdump', 'adduser', 'python2.7', 'sudo'
 
 SYSTEM_INFO = {
-    'SE2Linux':
-        SystemInfo('rpm', REDHAT_COMMON),
     'RHEL_6':
-        SystemInfo('rpm', REDHAT_COMMON),
+        SystemInfo('rpm', REDHAT_COMMON + ('python27',)),
     'RHEL_7':
         SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python', 'sudo')),
     'RaspbianJessie':

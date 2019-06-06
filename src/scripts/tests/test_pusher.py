@@ -68,6 +68,20 @@ class PusherTestCase(TestCase):
         expected = datetime(2014, 3, 24, 14, 10, 0)
         self.assertEqual(actual, expected)
 
+    def test_delete_old_archives(self):
+        self.inst.output_dir = gettempdir()
+        self.inst.file_fmt = 'pusher-test-%Y%m%d%H%M'
+        self.inst.prefix_len = 24
+
+        old_time = (self.utcnow-MAX_BACKLOG_DELTA).strftime(self.inst.file_fmt)
+        file_path = join(self.inst.output_dir, old_time)
+        fh = open(file_path, 'w')
+        fh.write("make file pass empty check")
+        fh.close()
+
+        self.inst._send_archives(self.utcnow)
+        self.assertFalse(exists(file_path))
+
 
 class PusherTestBase(object):
     """

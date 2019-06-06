@@ -176,12 +176,16 @@ class Pusher(Service):
             if getsize(file_path) == 0:
                 continue
 
-            # Send the files, skipping very old ones and removing those that
-            # have been successfully transmitted
-            if (now - whence) < MAX_BACKLOG_DELTA:
-                if not self.send_sensor_data(file_path, whence):
-                    logging.warning('Could not send %s', file_path)
-                    continue
+            # remove very old files
+            if (now - whence) >= MAX_BACKLOG_DELTA:
+                self._remove_file(file_path)
+                continue
+
+            # attempt to send the file, removing those that have been
+            # successfully transmitted
+            if not self.send_sensor_data(file_path, whence):
+                logging.warning('Could not send %s', file_path)
+                continue
 
             self._remove_file(file_path)
 

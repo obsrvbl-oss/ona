@@ -11,432 +11,312 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
-import logging
-import os
-import re
-import signal
+from __future__ import print_function, unicode_literals
 import socket
 
+from binascii import unhexlify
 from datetime import datetime
+from json import dumps
+from os.path import join
 from shutil import rmtree
 from tempfile import mkdtemp
-from threading import Thread, Condition
 from time import time
 from unittest import TestCase
 
-from mock import call, patch, Mock
+from mock import call, patch, MagicMock
+from requests import Response
 
 from ona_service.notification_publisher import (
+    ENV_NOTIFICATION_TYPES,
     NotificationPublisher,
     STATE_FILE,
-    CONFIG_DEFAULTS,
+    POST_PUBLISH_WAIT_SECONDS,
 )
-from ona_service.snmp_handler import SnmpHandler
-from ona_service.utils import utc
+from ona_service.utils import utc, utcnow
 
-TEST_PORT = 13456
+PATCH_PATH = 'ona_service.notification_publisher.{}'.format
 
-
-class UdpReceiver(Thread):
-    """Thread which can receive UDP messages on a port, so we can make sure
-       syslog/snmp is working."""
-    def __init__(self, port):
-        Thread.__init__(self)
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.addr = ("127.0.0.1", port)
-        self.socket.bind(self.addr)
-        self.packets = []
-        self.packets_cv = Condition()
-
-    def run(self):
-        self.running = True
-        while self.running:
-            data, _ = self.socket.recvfrom(4096)
-
-            with self.packets_cv:
-                self.packets.append(data)
-                self.packets_cv.notify_all()
-
-    def pop(self, timeout_seconds=10):
-        """Blocking call that returns the next UDP packet received or
-           raises an exception on timeout."""
-        start_time = time()
-
-        with self.packets_cv:
-            while len(self.packets) == 0:
-                total_wait = time() - start_time
-                if total_wait < timeout_seconds:
-                    self.packets_cv.wait(timeout_seconds)
-                else:
-                    raise StandardError("Timed out waiting for packet.")
-
-            return self.packets.pop(0)
-
-    def stop(self):
-        self.running = False
-        self.socket.sendto("quit", self.addr)  # Send jibberish so recv wakes.
-
-    def close(self):
-        self.socket.close()
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self.stop()
-        self.join()
-        self.close()
+RESPONSE_OBJECTS = [
+    {'time': '2018-09-28T00:10:00+00:00'},
+    {'time': '2018-09-28T00:11:00+00:00'},
+]
 
 
-def get_syslog_string(time, facility, priority, message):
-    syslog_handler = logging.handlers.SysLogHandler()
-    encoded_priority = syslog_handler.encodePriority(facility, priority)
-    encoded_message = CONFIG_DEFAULTS['syslog_format'].format(
-        time=time,
-        sensor_hostname=socket.gethostname(),
-        facility=facility,
-        priority=priority.upper(),
-        message=message,
-    )
-    return "<%i>%s\000" % (encoded_priority, encoded_message)
-
-
-class NotificationPublisherTest(TestCase):
+class NotificationPublisherTests(TestCase):
     def setUp(self):
-        self.cwd = os.getcwd()
-        self.tmp_dir = mkdtemp()
-        os.chdir(self.tmp_dir)
+        self.temp_dir = mkdtemp()
 
     def tearDown(self):
-        os.chdir(self.cwd)
-        rmtree(self.tmp_dir)
+        rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    def test_get_data(self, mock_get):
-        messages = [
-            {'id': 1, 'time': '2015-05-01T01:02:03+00:00'},
-            {'id': 2, 'time': '2015-05-01T01:02:04+00:00'},
-            {'id': 3, 'time': '2015-05-01T01:02:05+00:00'},
-        ]
-        mock_get.return_value.json.return_value = {'objects': messages}
+    def _get_instance(self, **environment):
+        with patch.dict(PATCH_PATH('os_environ'), environment):
+            state_file_path = join(self.temp_dir, STATE_FILE)
+            with patch(PATCH_PATH('STATE_FILE'), state_file_path):
+                inst = NotificationPublisher()
+                inst.api = MagicMock(inst.api)
 
-        pub = NotificationPublisher()
-        actual = pub.get_data('thingy', 'params')
+        return inst
 
-        self.assertEquals(actual, messages)
-        self.assertEquals(mock_get.call_args_list, [
-            call(pub.api, 'thingy', 'params'),
-        ])
+    def _get_socket(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(5.0)
+        sock.bind(('localhost', 0))
+        host, port = sock.getsockname()
 
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    def test_get_data_kaboom(self, mock_get):
-        mock_get.side_effect = ValueError
+        return sock, host, port
 
-        pub = NotificationPublisher()
-        actual = pub.get_data('thingy', 'params')
+    def test_get_data(self):
+        # When all is well, the get_data method returns the deserialized
+        # objects
+        inst = self._get_instance()
 
-        self.assertEquals(actual, None)
-        self.assertEquals(mock_get.call_args_list, [
-            call(pub.api, 'thingy', 'params'),
-        ])
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        inst.api.get_data.return_value = response
 
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    def test_get_data_kerpow(self, mock_get):
-        mock_get.return_value.json.return_value = {'error': ':('}
+        params = {'time__gt': '2018-09-28T00:00:00+00:00'}
+        actual = inst.get_data('alerts', params)
+        self.assertEqual(actual, RESPONSE_OBJECTS)
 
-        pub = NotificationPublisher()
-        actual = pub.get_data('thingy', 'params')
+    def test_get_data_server_error(self):
+        # If there's an error and no JSON is returned, the get_data method
+        # returns None
+        inst = self._get_instance()
 
-        self.assertEquals(actual, None)
-        self.assertEquals(mock_get.call_args_list, [
-            call(pub.api, 'thingy', 'params'),
-        ])
+        response = Response()
+        response.status_code = 500
+        response._content = b'No go, bro'
+        inst.api.get_data.return_value = response
 
-    @patch('ona_service.notification_publisher.create_logger', autospec=True)
-    def test_publish(self, mock_create_logger):
-        mock_logger = Mock()
-        mock_create_logger.return_value = mock_logger
+        params = {'time__gt': '2018-09-28T00:00:00+00:00'}
+        actual = inst.get_data('alerts', params)
+        self.assertIsNone(actual)
 
-        pub = NotificationPublisher()
+    def test_get_data_client_error(self):
+        # When all is well, the get_data method returns the deserialized
+        # objects
+        inst = self._get_instance()
 
-        messages = ['foo', 'bar']
-        pub.publish(messages, 'error')
-        self.assertEquals(mock_logger.error.call_args_list, [
-            call('foo'),
-            call('bar'),
-        ])
+        response = Response()
+        response.status_code = 400
+        data = {
+            'error': 'What were you trying to do?'
+        }
+        response._content = dumps(data)
+        inst.api.get_data.return_value = response
 
-        messages = ['what?']
-        pub.publish(messages, 'info')
-        self.assertEquals(mock_logger.info.call_args_list, [
-            call('what?'),
-        ])
+        params = {'time__gt': '2018-09-28T00:00:00+00:00'}
+        actual = inst.get_data('alerts', params)
+        self.assertIsNone(actual)
 
-        pub.publish([], 'nope')
-        self.assertEquals(mock_logger.nope.call_args_list, [])
+    def test_publish_wait(self):
+        # We should wait a bit in between messages - not send them all at once
+        inst = self._get_instance()
+        inst.logger = MagicMock()
 
-    def test_publish_syslog(self):
-        with UdpReceiver(TEST_PORT) as server:
-            with patch.dict('os.environ'):
-                os.environ['OBSRVBL_SYSLOG_ENABLED'] = 'True'
-                os.environ['OBSRVBL_SYSLOG_SERVER'] = 'localhost'
-                os.environ['OBSRVBL_SYSLOG_SERVER_PORT'] = str(TEST_PORT)
-                os.environ['OBSRVBL_SYSLOG_FACILITY'] = 'user'
+        messages = ['message_1', 'message_2', 'message_3']
+        start_time = time()
+        inst.publish(messages, 'info')
+        end_time = time()
 
-                pub = NotificationPublisher()
+        self.assertEqual(
+            inst.logger.info.mock_calls, [call(x) for x in messages]
+        )
 
-                messages = []
-                messages.append('foobar')
-                pub.publish(messages, 'error')
+        elapsed = end_time - start_time
+        min_elapsed = POST_PUBLISH_WAIT_SECONDS * len(messages)
+        self.assertGreater(elapsed, min_elapsed)
 
-            msg = server.pop()
-            # expect timestamp of the form:
-            time = re.search(">(\d+-\d+-\d+T\d+:\d+:\d+.\d+\+00:00)",
-                             msg).groups()[0]
+    def test_publish_error(self):
+        # Even if there's an error in publishing, we should attempt to publish
+        # all messages
+        inst = self._get_instance()
+        inst.logger = MagicMock()
+        inst.logger.info.side_effect = ValueError
+
+        messages = ['message_1', 'message_2']
+        inst.publish(messages, 'info')
+        self.assertEqual(
+            inst.logger.info.mock_calls, [call(x) for x in messages]
+        )
+
+    def test_execute_no_handlers(self):
+        # Nothing enabled means no calls to the API
+        inst = self._get_instance()
+        inst.execute()
+        self.assertEqual(len(inst.api.mock_calls), 0)
+
+    def test_execute_bad_data_type(self):
+        # Users can specify incorrect data types; don't crash
+        environment = {
+            ENV_NOTIFICATION_TYPES: 'bogus-type',
+        }
+        inst = self._get_instance(**environment)
+        inst.logger = MagicMock()
+        inst.execute()
+        self.assertEqual(len(inst.api.mock_calls), 0)
+
+    def test_execute_no_state(self):
+        # Response data
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': RESPONSE_OBJECTS})
+
+        inst = self._get_instance()
+        inst.api.get_data.return_value = response
+        inst.logger = MagicMock()
+
+        inst.execute()
+
+        # By default alerts are published with the "error" priority
+        # Observations are also published by default, with "info" priority
+        for log_func in (inst.logger.error, inst.logger.info):
             self.assertEqual(
-                msg, get_syslog_string(time, 'user', 'error', 'foobar'))
+                log_func.mock_calls, [call(x) for x in RESPONSE_OBJECTS]
+            )
 
-    @patch('ona_service.notification_publisher.SnmpHandler', autospec=True)
-    def test_publish_snmp(self, mock_snmp):
-        mock_snmp.return_value = SnmpHandler('user', '1.3.6.1.4.1.3375.2.100',
-                                             port=TEST_PORT)
-        with UdpReceiver(TEST_PORT) as server:
-            with patch.dict('os.environ'):
-                os.environ['OBSRVBL_SNMP_ENABLED'] = 'True'
-                os.environ['OBSRVBL_SNMP_OBJECTID'] = '1.3.6.1.4.1.3375.2.100'
-                os.environ['OBSRVBL_SNMP_SERVER'] = 'localhost'
-                os.environ['OBSRVBL_SNMP_USER'] = 'user'
+        # The state file should be filled in with the max time for each type
+        for data_type in ('alerts', 'observations'):
+            self.assertEqual(
+                inst.state[data_type],
+                {'time__gt': '2018-09-28T00:11:00+00:00'}
+            )
 
-                pub = NotificationPublisher()
+    def test_execute_no_messages(self):
+        # Empty response data - no publish attempts should happen
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': []})
 
-                messages = []
-                messages.append('foobar')
-                pub.publish(messages, 'error')
+        inst = self._get_instance()
+        inst.api.get_data.return_value = response
+        inst.logger = MagicMock()
 
-            msg = server.pop()
-            self.assertRegexpMatches(msg, 'foobar')
+        now = utcnow().replace(tzinfo=utc)
+        inst.execute(now=now)
 
-        self.assertEquals(mock_snmp.call_args_list, [
-            call(objectID='1.3.6.1.4.1.3375.2.100', port=162, host='localhost',
-                 user='user', version='2c', passcode=None, engineID=None),
-        ])
+        self.assertEqual(inst.logger.error.call_count, 0)
+        self.assertEqual(inst.logger.info.call_count, 0)
 
-    @patch('ona_service.notification_publisher.SnmpHandler', autospec=True)
-    def test_publish_snmpv3(self, mock_snmp):
-        mock_snmp.return_value = SnmpHandler('user', '1.3.6.1.4.1.3375.2.100',
-                                             port=TEST_PORT)
-        with UdpReceiver(TEST_PORT) as server:
-            with patch.dict('os.environ'):
-                os.environ['OBSRVBL_SNMP_ENABLED'] = 'True'
-                os.environ['OBSRVBL_SNMP_OBJECTID'] = '1.3.6.1.4.1.3375.2.100'
-                os.environ['OBSRVBL_SNMP_SERVER'] = 'localhost'
-                os.environ['OBSRVBL_SNMP_USER'] = 'user'
-                os.environ['OBSRVBL_SNMP_VERSION'] = '3'
-                os.environ['OBSRVBL_SNMPV3_ENGINEID'] = '01020304'
-                os.environ['OBSRVBL_SNMPV3_PASSPHRASE'] = 'opensesame'
+        # The state file should be filled in with the call time, even though
+        # there were no messages
+        for data_type in ('alerts', 'observations'):
+            actual_dt = inst.state[data_type]['time__gt']
+            expected_dt = now.isoformat()
+            self.assertGreaterEqual(actual_dt, expected_dt)
 
-                pub = NotificationPublisher()
+    def test_execute_syslog(self):
+        # Enable syslog and listen for the UDP packets locally
+        sock, host, port = self._get_socket()
 
-                messages = []
-                messages.append('foobar')
-                pub.publish(messages, 'error')
+        # Response data
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': RESPONSE_OBJECTS})
 
-            msg = server.pop()
-            self.assertRegexpMatches(msg, 'foobar')
-
-        self.assertEquals(mock_snmp.call_args_list, [
-            call(objectID='1.3.6.1.4.1.3375.2.100', port=162, host='localhost',
-                 user='user', version='3', passcode='opensesame',
-                 engineID='01020304'),
-        ])
-
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    def test_execute_none(self, mock_get):
-        env_override = {
-            'OBSRVBL_SNMP_ENABLED': 'false',
-            'OBSRVBL_SYSLOG_ENABLED': 'false',
+        environment = {
+            'OBSRVBL_SYSLOG_ENABLED': 'true',
+            'OBSRVBL_SYSLOG_SERVER': host,
+            'OBSRVBL_SYSLOG_SERVER_PORT': str(port),
+            'OBSRVBL_SYSLOG_FACILITY': 'local0',
+            ENV_NOTIFICATION_TYPES: 'alerts-detail',
         }
-        with patch.dict('ona_service.ipfix_pusher.environ', env_override):
-            pub = NotificationPublisher()
-            pub.execute()
+        inst = self._get_instance(**environment)
+        inst.api.get_data.return_value = response
+        inst.execute()
+        try:
+            messages = [sock.recvfrom(4096)[0] for x in RESPONSE_OBJECTS]
+        except socket.timeout:
+            self.fail('No message')
+        finally:
+            sock.close()
 
-        self.assertEqual(mock_get.call_count, 0)
+        for msg, obj in zip(messages, RESPONSE_OBJECTS):
+            dt, hostname, service, level, payload = msg.split(' ', 4)
+            datetime.strptime(dt, '<131>%Y-%m-%dT%H:%M:%S.%f+00:00')
+            self.assertEqual(service, 'OBSRVBL')
+            self.assertEqual(level, '[local0.ERROR]')
+            self.assertEqual(payload, '{}\x00'.format(obj))
 
-    @patch('ona_service.notification_publisher.utcnow', autospec=True)
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    @patch('ona_service.notification_publisher.create_logger', autospec=True)
-    def test_execute_default(self, mock_create_logger, mock_get, mock_now):
-        mock_logger = Mock()
-        mock_create_logger.return_value = mock_logger
+    def test_execute_snmp(self):
+        # Enable SNMP and listen for the UDP packets locally
+        sock, host, port = self._get_socket()
 
-        messages = [
-            {'id': 1, 'time': '2015-05-01T01:02:03+00:00'},
-            {'id': 2, 'time': '2015-05-01T01:02:04+00:00'},
-            {'id': 3, 'time': '2015-05-01T01:02:05+00:00'},
-        ]
-        mock_get.return_value.json.return_value = {'objects': messages}
+        # Response data
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': RESPONSE_OBJECTS})
 
-        now = datetime.utcnow().replace(tzinfo=utc)
-        mock_now.return_value = now
-        default_params = {'time__gt': now.isoformat()}
-
-        pub = NotificationPublisher()
-        pub.execute()
-
-        self.assertEquals(mock_get.call_args_list, [
-            call(pub.api, 'alerts', default_params),
-            call(pub.api, 'observations', default_params),
-        ])
-
-        self.assertEquals(mock_logger.info.call_args_list, [
-            call(m) for m in messages
-        ])
-        self.assertEquals(mock_logger.error.call_args_list, [
-            call(m) for m in messages
-        ])
-
-        with open(STATE_FILE, 'r') as f:
-            state = json.load(f)
-
-        self.assertEquals(
-            state,
-            {
-                'alerts': {'time__gt': '2015-05-01T01:02:05+00:00'},
-                'observations': {'time__gt': '2015-05-01T01:02:05+00:00'}
-            }
-        )
-
-    @patch('ona_service.notification_publisher.utcnow', autospec=True)
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    @patch('ona_service.notification_publisher.create_logger', autospec=True)
-    def test_execute_detail_only(self, mock_create_logger, mock_get, mock_now):
-        mock_logger = Mock()
-        mock_create_logger.return_value = mock_logger
-
-        messages = [
-            {'id': 1, 'time': '2015-05-01T01:02:03+00:00'},
-            {'id': 2, 'time': '2015-05-01T01:02:04+00:00'},
-            {'id': 3, 'time': '2015-05-01T01:02:05+00:00'},
-        ]
-        mock_get.return_value.json.return_value = {'objects': messages}
-
-        now = datetime.utcnow().replace(tzinfo=utc)
-        mock_now.return_value = now
-        default_params = {'time__gt': now.isoformat()}
-
-        with patch.dict('os.environ'):
-            os.environ['OBSRVBL_NOTIFICATION_TYPES'] = 'alerts-detail bogus'
-            pub = NotificationPublisher()
-            pub.execute()
-
-        self.assertEquals(mock_get.call_args_list, [
-            call(pub.api, 'alert-notifications', default_params),
-        ])
-
-        self.assertEquals(mock_logger.error.call_args_list, [
-            call(m) for m in messages
-        ])
-
-        with open(STATE_FILE, 'r') as f:
-            state = json.load(f)
-
-        self.assertEquals(
-            state,
-            {
-                'alerts-detail': {'time__gt': '2015-05-01T01:02:05+00:00'},
-            }
-        )
-
-    @patch('ona_service.notification_publisher.utcnow', autospec=True)
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    @patch('ona_service.notification_publisher.create_logger', autospec=True)
-    def test_execute_noresults(self, mock_create_logger, mock_get, mock_now):
-        mock_logger = Mock()
-        mock_create_logger.return_value = mock_logger
-
-        mock_get.return_value.json.side_effect = ValueError
-
-        now = datetime.utcnow().replace(tzinfo=utc)
-        mock_now.return_value = now
-        default_params = {'time__gt': now.isoformat()}
-
-        pub = NotificationPublisher()
-        pub.execute()
-
-        self.assertEquals(mock_get.call_args_list, [
-            call(pub.api, 'alerts', default_params),
-            call(pub.api, 'observations', default_params),
-        ])
-
-        self.assertEquals(mock_logger.info.call_args_list, [])
-        self.assertEquals(mock_logger.error.call_args_list, [])
-
-        with open(STATE_FILE, 'r') as f:
-            state = json.load(f)
-        self.assertEquals(state, {
-            'alerts': default_params,
-            'observations': default_params,
-        })
-
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    @patch('ona_service.notification_publisher.create_logger', autospec=True)
-    def test_execute_resume(self, mock_create_logger, mock_get):
-        last_alert_time = '2015-05-01T01:02:03+00:00'
-        last_obs_time = '2015-05-01T01:02:02+00:00'
-
-        state = {
-            'alerts': {'time__gt': last_alert_time},
-            'observations': {'time__gt': last_obs_time}
+        environment = {
+            'OBSRVBL_SNMP_ENABLED': 'true',
+            'OBSRVBL_SNMP_OBJECTID': '1.3.6.1.4.1.3375.2.100',
+            'OBSRVBL_SNMP_SERVER': host,
+            'OBSRVBL_SNMP_SERVER_PORT': str(port),
+            'OBSRVBL_SNMP_USER': 'yolo',
+            ENV_NOTIFICATION_TYPES: 'alerts-detail',
         }
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f)
+        inst = self._get_instance(**environment)
+        inst.api.get_data.return_value = response
+        inst.execute()
+        try:
+            messages = [sock.recvfrom(4096)[0] for x in RESPONSE_OBJECTS]
+        except socket.timeout:
+            self.fail('No message')
+        finally:
+            sock.close()
 
-        mock_logger = Mock()
-        mock_create_logger.return_value = mock_logger
+        for msg, obj in zip(messages, RESPONSE_OBJECTS):
+            # SNMPv2 is 0x01, of course
+            self.assertEqual('\x01', msg[4])
+            # Community string
+            self.assertIn(b'yolo', msg)
+            # OID should be included twice - once to say it's coming, once
+            # to give the value
+            encoded_oid = unhexlify('2b060104019a2f0264')
+            self.assertTrue(msg.count(encoded_oid), 2)
+            # Encoded message should appear
+            self.assertIn(str(obj), msg)
 
-        messages = [{'id': 5, 'time': '2015-05-01T01:02:05+00:00'}]
-        mock_get.return_value.json.return_value = {'objects': messages}
+    def test_execute_snmpv3(self):
+        # Enable SNMPv3 and listen for the UDP packets locally
+        sock, host, port = self._get_socket()
 
-        pub = NotificationPublisher()
-        pub.execute()
+        # Response data
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': RESPONSE_OBJECTS})
 
-        self.assertEquals(
-            mock_get.call_args_list,
-            [
-                call(pub.api, 'alerts', {'time__gt': last_alert_time}),
-                call(pub.api, 'observations', {'time__gt': last_obs_time}),
-            ]
-        )
+        environment = {
+            'OBSRVBL_SNMP_ENABLED': 'true',
+            'OBSRVBL_SNMP_OBJECTID': '1.3.6.1.4.1.3375.2.100',
+            'OBSRVBL_SNMP_SERVER': host,
+            'OBSRVBL_SNMP_SERVER_PORT': str(port),
+            'OBSRVBL_SNMP_VERSION': '3',
+            'OBSRVBL_SNMPV3_ENGINEID': '0102030405',
+            'OBSRVBL_SNMPV3_PASSPHRASE': 'opensesame',
+            'OBSRVBL_SNMP_USER': 'nolo',
+            ENV_NOTIFICATION_TYPES: 'alerts-detail',
+        }
+        inst = self._get_instance(**environment)
+        inst.api.get_data.return_value = response
+        inst.execute()
+        try:
+            messages = [sock.recvfrom(4096)[0] for x in RESPONSE_OBJECTS]
+        except socket.timeout:
+            self.fail('No message')
+        finally:
+            sock.close()
 
-        self.assertEquals(mock_logger.info.call_args_list, [
-            call(m) for m in messages
-        ])
-        self.assertEquals(mock_logger.error.call_args_list, [
-            call(m) for m in messages
-        ])
-
-        with open(STATE_FILE, 'r') as f:
-            state = json.load(f)
-
-        self.assertEquals(
-            state,
-            {
-                'alerts': {'time__gt': '2015-05-01T01:02:05+00:00'},
-                'observations': {'time__gt': '2015-05-01T01:02:05+00:00'}
-            }
-        )
-
-    @patch('ona_service.api.Api.get_data', autospec=True)
-    def test_service(self, mock_get):
-        mock_get.return_value.json.return_value = {'objects': []}
-
-        pub = NotificationPublisher()
-        pub.poll_seconds = 0
-
-        def killer(signum, frame):
-            pub.stop()
-        signal.signal(signal.SIGALRM, killer)
-        signal.alarm(1)
-        pub.run()
+        for msg, obj in zip(messages, RESPONSE_OBJECTS):
+            # SNMPv3 is 0x03, which does make sense
+            self.assertEqual('\x03', msg[5])
+            # User is in the message
+            self.assertIn(b'nolo', msg)
+            # OID should be included twice - once to say it's coming, once
+            # to give the value
+            encoded_oid = unhexlify('2b060104019a2f0264')
+            self.assertTrue(msg.count(encoded_oid), 2)
+            # Encoded message should appear
+            self.assertIn(str(obj), msg)

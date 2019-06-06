@@ -33,7 +33,7 @@ import re
 from argparse import ArgumentParser
 from datetime import datetime
 from errno import EAGAIN
-from os import getenv, listdir
+from os import environ, listdir
 from platform import platform, python_version
 from sys import exit
 
@@ -54,6 +54,7 @@ AUTO_CONFIG_FILE = '/opt/obsrvbl-ona/config.auto'
 # exported.
 CONFIG_WHITELIST = {
     # Parameters available on the site
+    'HOST',
     'networks',
     'pdns_pps_limit',
     'syslog_enabled',
@@ -78,6 +79,7 @@ CONFIG_WHITELIST = {
     'LOG_WATCHER',
     'HOSTNAME_RESOLVER',
     'NOTIFICATION_PUBLISHER',
+    'BRO_LOG_WATCHER',
     'PDNS_CAPTURER',
     'SERVICE_OSSEC',
     'SERVICE_SURICATA',
@@ -88,6 +90,7 @@ CONFIG_WHITELIST = {
     'SERVICE_KEY',
     'PNA_IFACES',
     'PDNS_CAPTURE_IFACE',
+    'BRO_LOG_PATH',
     'HOSTNAME_DNS',
     'HOSTNAME_NETBIOS',
     'SENSOR_EXT_ONLY',
@@ -103,27 +106,28 @@ class ONA(Service):
     def __init__(self, *args, **kwargs):
         logging.info('Observable ONA service starting')
         self.config_file = kwargs.pop('config_file', AUTO_CONFIG_FILE)
-        self.config_mode = getenv('OBSRVBL_MANAGE_MODE', 'manual')
+        self.config_mode = environ.get('OBSRVBL_MANAGE_MODE', 'manual')
         self.update_only = kwargs.pop('update_only', False)
         self.current_config = self._load_config()
 
         self.network_ifaces = None
-        if getenv('OBSRVBL_WATCH_IFACES', 'false') == 'true':
+        if environ.get('OBSRVBL_WATCH_IFACES', 'false') == 'true':
             self.network_ifaces = self._get_network_ifaces()
 
         super(ONA, self).__init__(*args, **kwargs)
 
-    def _report_to_site(self):
+    def _report_to_site(self, now=None):
         """
         Sends data to the site about the state of this sensor and its software
         """
+        now = now or datetime.now(utc)
         try:
             with open('/opt/obsrvbl-ona/version') as f:
                 version = f.read().strip()
         except IOError:
             version = 'unknown'
         data = {
-            'last_start': datetime.now(utc).isoformat(),
+            'last_start': now.isoformat(),
             'platform': platform(),
             'python_version': python_version(),
             'ona_version': version,
@@ -135,13 +139,15 @@ class ONA(Service):
         """
         Downloads configuration data from the site and returns it
         """
+        # Check for configuration parameters. If we got some, normalize them.
+        endpoint = 'sensors/{}'.format(self.api.ona_name)
         try:
-            path = 'sensors/{}'.format(self.api.ona_name)
-            sensor = self.api.get_data(path).json()
-        except ValueError:
-            return None
+            data = self.api.get_data(endpoint).json()
+        except Exception:
+            return
 
-        site_config = self._build_config(sensor.get('config', ''))
+        config_dict = data.get('config') or {}
+        site_config = self._build_config(config_dict)
         return site_config
 
     def _get_network_ifaces(self):
@@ -171,11 +177,11 @@ class ONA(Service):
         if not config:
             return ''
 
-        _config = []
-        for key, value in config.iteritems():
-            if value is None:
-                continue
+        # Filter out None
+        items = ((k, v) for k, v in config.iteritems() if v is not None)
 
+        _config = []
+        for key, value in items:
             # Check for values that match the IPFIX template or the whitelist
             upper_key = key.upper()
             if upper_key.startswith(IPFIX_PREFIX):
@@ -199,41 +205,40 @@ class ONA(Service):
             elif ALLOWED_CHARS.match(value) is None:
                 continue
 
+            # Set the remote server
+            if upper_key == 'HOST':
+                value = 'https://{}'.format(value)
+
             _config.append('OBSRVBL_{}="{}"'.format(upper_key, value))
 
         return '\n'.join(sorted(_config))
 
     def execute(self, now=None):
+        should_reload = False
+
         # Retrieve configuration from the site if we're in automatic mode
-        site_config = ''
         if self.config_mode == 'auto':
             site_config = self._retrieve_from_site()
+            if site_config and (site_config != self.current_config):
+                logging.info('Configuration updated, reloading')
+                self._write_config(site_config)
+                should_reload = True
 
-        # If we have a new and valid configuration from the site, save it
-        should_reload = False
-        if site_config and site_config != self.current_config:
-            logging.info('Configuration updated, reloading')
-            self._write_config(site_config)
-            should_reload = True
+        # Check for network interface changes if we're monitoring those
+        if self.network_ifaces is not None:
+            if self.network_ifaces != self._get_network_ifaces():
+                logging.info('Network interfaces changed')
+                should_reload = True
 
-        # If we're monitoring network interfaces, check them and reload
-        # if there has been a change.
-        if (
-            self.network_ifaces is not None and
-            self.network_ifaces != self._get_network_ifaces()
-        ):
-            logging.info('Network interfaces changed, reloading')
-            should_reload = True
-
-        # If this is an --update-only run, send stats to the site and stop
+        # For an --update-only run, report stats and prepare to exit naturally
+        # if there were no configuration changes
         if self.update_only:
-            self._report_to_site()
-            if should_reload:
-                exit(EAGAIN)
-            else:
-                self.stop()
-        # If there was an update, exit so that services can restart
-        elif should_reload:
+            self._report_to_site(now=now)
+            self.stop()
+
+        # If there were configuration changes, exit more abruptly.
+        # We should be resurrected by the init system.
+        if should_reload:
             exit(EAGAIN)
 
 

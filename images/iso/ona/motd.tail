@@ -2,11 +2,14 @@
 
 cat << EOF
 
-This machine is an Observable Networks Sensor.
+This machine is a Stealthwatch Cloud sensor.
 
-It should have at least two network interfaces:
-* The default interface should have Internet access for management traffic
-* The other(s) should be connected to mirror / SPAN ports on a switch / router
+Use the web portal at https://<your-org>.obsrvbl.com to manage this sensor.
 
-Use the web portal (<your-org>.obsrvbl.com) to manage this sensor.
+To make local configuration changes, edit the file:
+/opt/obsrvbl-ona/config.local
+
+To test connectivity to Stealthwatch Cloud, run this command:
+curl https://sensor.ext.obsrvbl.com
+
 EOF

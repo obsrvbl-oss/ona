@@ -1,9 +1,0 @@
-/var/log/samba_audit.log {
-	daily
-	missingok
-	rotate 7
-	compress
-	notifempty
-	nocreate
-	copytruncate
-}

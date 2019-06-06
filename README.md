@@ -8,27 +8,23 @@ See [observable.net](https://observable.net) for more information about Observab
 
 The following platforms are officially supported:
 
-* Ubuntu 14.04
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuTrusty_amd64.deb)
-    * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuTrusty_i386.deb)
 * Ubuntu 16.04 and later:
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuVivid_amd64.deb)
-    * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuVivid_i386.deb)
+    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb)
 * RHEL 6 and compatible (including CentOS 6* and Amazon Linux for EC2):
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_amd64.rpm)
+    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_x86_64.rpm)
     * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_i386.rpm)
 * RHEL 7 and compatible (including CentOS 7):
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_7_amd64.rpm)
-* Raspberry Pi 2 Model B with Raspbian:
+    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_7_x86_64.rpm)
+* Raspberry Pi Raspbian:
     * [32-bit armhf](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RaspbianJessie_armhf.deb)
 * Docker (tested with CoreOS):
     * [64-bit](https://github.com/obsrvbl/ona/blob/master/images/docker/Dockerfile)
 
-To install the latest version on 14.04 (recommended for physical and virtual machine installations):
+To install the latest version on 18.04 (recommended for physical and virtual machine installations):
 
 ```
-# wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuTrusty_amd64.deb
-# dpkg -i ona-service_UbuntuTrusty_amd64.deb
+# wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb
+# dpkg -i ona-service_UbuntuXenial_amd64.deb
 ```
 
 (Replace `master` with a version tag if you need an older version.)
@@ -37,18 +33,13 @@ To install the latest version on 14.04 (recommended for physical and virtual mac
 
 ## Services
 
-The ONA is composed of a number of configurable services, supervised by a single system service, `obsrvbl-ona`. Control which services are running by editing `/opt/obsrvbl-ona/config`.
+The ONA is composed of a number of configurable services, supervised by a single system service, `obsrvbl-ona`.
+Control which services are running by editing `/opt/obsrvbl-ona/config.local`.
+Some of the services include:
 
-* (Runs by default) `obsrvbl-ona`: Monitors for configuration changes, handles
-  automatic updates. Starting this service will start the other services that are configured.
-* (Runs by default) `log-watcher`: Tracks the sensor's authentication logs.
-* (Runs by default) `pdns-capturer` - Collects passive DNS queries.
-* (Runs by default) `pna-monitor` - Collects IP traffic metadata.
-* (Runs by default) `pna-pusher` - Sends IP traffic metadata to the Observable cloud.
-* (Runs by default) `hostname-resolver` - Resolve active IPs to local hostnames.
-* `netflow-monitor` - Listens for NetFlow data sent by routers and switches.
-* `netflow-pusher` - Sends NetFlow data to the Observable cloud.
-* `notification-publisher` - Relays Observable observations and alerts over syslog or SNMP.
-* `ossec-alert-watcher` - If OSSEC is installed, monitors its alerts.
-* `suricata-alert-watcher` - If Suricata is installed, monitors its alerts.
-
+* __ONA Service__: Monitors for configuration updates
+* __PNA Service__ - Collects and uploads IP traffic metadata from system network interfaces
+* __IPFIX Capturer__ - Collects and uploads NetFlow, IPFIX, or sFlow data from remote exporters
+* __Hostname Resolver__ - Resolve active IPs to local hostnames
+* __Log watcher__: Monitors and uploads the sensor's authentication logs
+* __PDNS Capturer__ - Collects and uploads passive DNS queries
