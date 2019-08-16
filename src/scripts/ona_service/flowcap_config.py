@@ -18,6 +18,7 @@ import io
 import logging
 
 from collections import defaultdict
+from distutils.spawn import find_executable
 from os import environ
 from subprocess import call, CalledProcessError, check_output, STDOUT
 
@@ -37,8 +38,8 @@ DEFAULT_IPSET_UDP_CONF = '/opt/obsrvbl-ona/system/netflow-udp.ipset'
 ENV_IPSET_TCP_CONF = 'OBSRVBL_IPSET_TCP_CONF'
 DEFAULT_IPSET_TCP_CONF = '/opt/obsrvbl-ona/system/netflow-tcp.ipset'
 
-IPSET_PATH = '/sbin/ipset'
-IPTABLES_PATH = '/sbin/iptables'
+IPSET_PATH = find_executable('ipset') or '/sbin/ipset'
+IPTABLES_PATH = find_executable('iptables') or '/sbin/iptables'
 
 PROBE_TYPES = {'netflow-v9', 'netflow-v5', 'ipfix', 'sflow'}
 

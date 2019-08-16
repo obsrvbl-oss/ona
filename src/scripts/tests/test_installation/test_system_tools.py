@@ -13,7 +13,10 @@
 # limitations under the License.
 from __future__ import division, print_function, unicode_literals
 
-from os.path import join
+from io import open
+from os.path import exists, join
+from shutil import rmtree
+from tempfile import mkdtemp
 from unittest import TestCase
 from uuid import uuid4
 
@@ -27,6 +30,10 @@ PATCH_PATH = 'ona_service.installation.system_tools.{}'
 class BaseSystemTestCase(TestCase):
     def setUp(self):
         self.base_system = system_tools.BaseSystem()
+        self.temp_dir = mkdtemp()
+
+    def tearDown(self):
+        rmtree(self.temp_dir, ignore_errors=True)
 
     def test_get_users(self):
         read_data = 'one:x\ntwo:y\nthree:z'
@@ -86,43 +93,63 @@ class BaseSystemTestCase(TestCase):
 
     @patch(PATCH_PATH.format('node'), autospec=True)
     def test_set_ona_name_default(self, mock_node):
+        # The hostname is something we set, so we don't need to make one up.
         mock_node.return_value = 'ona-0a1b2c'
-        open_ = mock_open()
-        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
+        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir):
             self.base_system.set_ona_name()
 
-        self.assertEqual(mocked.call_count, 0)
+        # No configuration file should be written.
+        config_local_path = join(self.temp_dir, 'config.local')
+        self.assertFalse(exists(config_local_path))
 
     @patch(PATCH_PATH.format('uuid4'), autospec=True)
     @patch(PATCH_PATH.format('node'), autospec=True)
     def test_set_ona_name_override(self, mock_node, mock_uuid4):
+        # The hostname is not something we set, so we make one up and write
+        # it to the configuration file.
         mock_node.return_value = 'default'
 
-        mock_uuid4.return_value = uuid4()
-        ona_name = mock_uuid4.return_value.hex[:6]
+        token = uuid4()
+        mock_uuid4.return_value = token
 
-        open_ = mock_open()
-        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
+        # Touch the config.local file
+        config_local_path = join(self.temp_dir, 'config.local')
+        with open(config_local_path, 'wt'):
+            pass
+
+        # Set the sensor name
+        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir):
             self.base_system.set_ona_name()
 
-        open_.assert_called_with(
-            system_tools.OBSRVBL_ROOT + 'config.local', 'a'
-        )
-        actual = mocked().write.call_args[0][0]
-        expected = 'OBSRVBL_ONA_NAME="ona-{}"\n'.format(ona_name)
+        # Read back the configuration file
+        with open(config_local_path, 'rt') as infile:
+            actual = infile.read()
+        sensor_name = system_tools.ONA_NAME_PREFIX + str(token)[:6]
+        expected = 'OBSRVBL_ONA_NAME="{}"\n'.format(sensor_name)
         self.assertEqual(actual, expected)
 
     @patch(PATCH_PATH.format('node'), autospec=True)
     def test_set_ona_name_no_override(self, mock_node):
+        # The hostname is not something we set, but the configuration file
+        # has already been written. So we don't override it.
         mock_node.return_value = 'default'
-        open_ = mock_open()
-        with patch(PATCH_PATH.format('open'), open_, create=True) as mocked:
-            mocked.return_value.__iter__.return_value = [
-                'OBSRVBL_ONA_NAME=ona-something\n'
-            ]
+
+        sensor_name = system_tools.ONA_NAME_PREFIX + 'something'
+
+        # Touch the config.local file
+        config_local_path = join(self.temp_dir, 'config.local')
+        with open(config_local_path, 'wt') as outfile:
+            print('OBSRVBL_ONA_NAME="{}"'.format(sensor_name), file=outfile)
+
+        # Set the sensor name
+        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir):
             self.base_system.set_ona_name()
 
-        self.assertEqual(mocked().write.call_count, 0)
+        # Read back the configuration file
+        with open(config_local_path, 'rt') as infile:
+            actual = infile.read()
+        expected = 'OBSRVBL_ONA_NAME="{}"\n'.format(sensor_name)
+        self.assertEqual(actual, expected)
 
 
 class SystemdMixinTestCase(TestCase):

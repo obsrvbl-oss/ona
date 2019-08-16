@@ -14,9 +14,9 @@
 from __future__ import print_function, unicode_literals
 
 import io
-import json
 
 from os.path import join
+from json import load as json_load, dumps
 from shutil import rmtree
 from unittest import TestCase
 from urlparse import urlparse
@@ -78,7 +78,7 @@ GET_PODS_RESPONSE = {
 }
 
 
-class HostnameResolverTest(TestCase):
+class KubernetesWatchers(TestCase):
     def setUp(self):
         self.tempdir = mkdtemp()
 
@@ -96,7 +96,6 @@ class HostnameResolverTest(TestCase):
     @patch(PATCH_PATH.format('requests.get'), autospec=True)
     def test_execute(self, mock_get):
         # Mock the API response, returning the test data
-        # Ensure that the hostname matches expecations
         def _get(url, params=None, **kwargs):
             from ona_service.kubernetes_watcher import requests as r
             host = urlparse(url).hostname
@@ -104,25 +103,20 @@ class HostnameResolverTest(TestCase):
 
             resp = requests.Response()
             resp.status_code = 200
-            resp._content = json.dumps(GET_PODS_RESPONSE)
+            resp.raw = io.BytesIO(dumps(GET_PODS_RESPONSE).encode('utf-8'))
             return resp
 
         mock_get.side_effect = _get
 
-        # Intercept the hostname upload, and check for expected output
+        # Intercept the upload, and check for expected output
         def _send_file(data_type, path, now, suffix=None):
-            self.assertEqual(data_type, 'hostnames')
+            self.assertEqual(data_type, 'logs')
             with open(path, 'rt') as infile:
-                actual = json.load(infile)
+                actual = json_load(infile)
 
-            expected = {
-                '192.0.2.1': 'pod-01.default',
-                '192.0.2.2': 'pod-02.custom',
-                '192.0.2.6': 'node-01',
-            }
-            self.assertEqual(actual, expected)
+            self.assertEqual(actual, GET_PODS_RESPONSE)
 
-            return 'file://{}/hostnames.json'.format(self.tempdir)
+            return 'file://{}/mock-ona_k8s-pods'.format(self.tempdir)
 
         # Emulate the k8s environment and run the service
         env = {
@@ -138,8 +132,11 @@ class HostnameResolverTest(TestCase):
             inst.execute()
 
         inst.api.send_signal.assert_called_once_with(
-            'hostnames',
-            {'path': 'file://{}/hostnames.json'.format(self.tempdir)}
+            'logs',
+            {
+                'log_type': 'k8s-pods',
+                'path': 'file://{}/mock-ona_k8s-pods'.format(self.tempdir),
+            }
         )
 
     @patch(PATCH_PATH.format('requests.get'), autospec=True)
@@ -148,7 +145,7 @@ class HostnameResolverTest(TestCase):
         def _get(url, params=None, **kwargs):
             resp = requests.Response()
             resp.status_code = 403
-            resp._content = json.dumps({})
+            resp.raw = io.BytesIO(dumps({}).encode('utf-8'))
             return resp
 
         mock_get.side_effect = _get

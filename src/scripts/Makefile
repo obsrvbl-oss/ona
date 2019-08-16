@@ -17,7 +17,7 @@ all: test
 
 vendor:
 	mkdir -p ${PYTHONPATH}
-	pip install --target="${PYTHONPATH}" -r requirements.txt
+	pip install --target="${PYTHONPATH}" -U -r requirements.txt
 	touch "${PYTHONPATH}/supervisor/__init__.py"
 
 requirements: vendor

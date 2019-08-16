@@ -151,6 +151,17 @@ OBSRVBL_NVZFLOW_LOG_DIR="/opt/obsrvbl-ona/logs/nvzflow"
 OBSRVBL_KUBERNETES_WATCHER="false"
 
 
+###
+# ise-poller
+###
+OBSRVBL_ISE_POLLER="false"
+# OBSRVBL_ISE_SERVER_NAME="localhost"
+# OBSRVBL_ISE_NODE_NAME=""
+# OBSRVBL_ISE_PASSWORD=""
+# OBSRVBL_ISE_CLIENT_CERT="/etc/ise_client_cert.pem"
+# OBSRVBL_ISE_CLIENT_KEY="/etc/ise_client_key.pem"
+# OBSRVBL_ISE_CA_CERT="/etc/ise_client_key.pem"
+
 # load up auto and local config
 [ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO
 [ -f $OBSRVBL_CONFIG_LOCAL ] && . $OBSRVBL_CONFIG_LOCAL

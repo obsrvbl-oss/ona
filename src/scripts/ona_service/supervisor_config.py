@@ -112,6 +112,9 @@ PROGRAM_COMMANDS = {
     'ona-kubernetes-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/kubernetes_watcher.py'
     ],
+    'ona-ise-poller': [
+        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/ise_poller.py'
+    ],
 }
 
 ENABLE_FLAGS = [
@@ -130,6 +133,7 @@ ENABLE_FLAGS = [
         'OBSRVBL_NVZFLOW_CAPTURER',
         ['ona-nvzflow-monitor', 'ona-nvzflow-pusher']
     ),
+    ('OBSRVBL_ISE_POLLER', ['ona-ise-poller']),
 ]
 
 

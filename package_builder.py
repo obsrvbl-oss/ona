@@ -33,8 +33,6 @@ SYSTEM_INFO = {
         SystemInfo('deb', RASBPI_COMMON),
     'RaspbianWheezyUpstart':
         SystemInfo('deb', RASBPI_COMMON + ('upstart',)),
-    'UbuntuTrusty':
-        SystemInfo('deb', UBUNTU_COMMON),
     'UbuntuXenial':
         SystemInfo('deb', UBUNTU_COMMON + ('systemd-sysv', 'net-tools')),
     'UbuntuXenialContainer':

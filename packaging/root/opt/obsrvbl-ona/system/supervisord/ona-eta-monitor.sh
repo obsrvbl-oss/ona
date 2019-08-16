@@ -33,4 +33,4 @@ exec /usr/bin/sudo \
         -W "1" \
         -U \
         -Z "obsrvbl_ona" \
-        "(udp dst port $OBSRVBL_ETA_UDP_PORT) and (udp[8:2] == 9)"
+        "(udp dst port $OBSRVBL_ETA_UDP_PORT) and ((udp[8:2] == 9) or (udp[8:2] == 10))"

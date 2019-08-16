@@ -15,7 +15,6 @@ from __future__ import print_function, unicode_literals
 
 # python builtins
 import io
-import json
 import logging
 import os
 from tempfile import NamedTemporaryFile
@@ -30,7 +29,8 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 K8S_CA_CERT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
 K8S_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'
 
-DATA_TYPE = 'hostnames'
+DATA_TYPE = 'logs'
+LOG_TYPE = 'k8s-pods'
 POLL_SECONDS = 3600
 
 
@@ -69,54 +69,38 @@ class KubernetesWatcher(Service):
         except (IOError, OSError):
             return None
 
-    def _send_update(self, resolved, now):
-        with NamedTemporaryFile() as f:
-            f.write(json.dumps(resolved))
-            f.seek(0)
-            path = self.api.send_file(DATA_TYPE, f.name, now, suffix='hosts')
-            if path is not None:
-                data = {'path': path}
-                self.api.send_signal(DATA_TYPE, data)
-
-    def _get_pods(self):
-        # Hit the k8s API server for pods in all namespaces
+    def _send_update(self, now):
+        # Talk to the Kubernetes API server discovered from the environment
         url = 'https://{}:{}/api/v1/pods/'.format(self.k8s_host, self.k8s_port)
         headers = {
             'Authorization': 'Bearer {}'.format(self.k8s_token),
             'Accept': 'application/json',
         }
-        resp = requests.get(url, headers=headers, verify=self.k8s_ca_cert_path)
-        resp.raise_for_status()
-        pod_data = resp.json()
+        get_kwargs = {
+            'url': url,
+            'headers': headers,
+            'verify': self.k8s_ca_cert_path,
+            'stream': True,
+        }
 
-        pod_ip_map = {}
-        cluster_ip_map = {}
-        for item in pod_data.get('items', []):
-            metadata = item.get('metadata', {})
-            pod_name = metadata.get('name')
-            pod_namespace = metadata.get('namespace')
+        # Make the request, streaming the response into a temporary file
+        with NamedTemporaryFile() as f, requests.get(**get_kwargs) as resp:
+            resp.raise_for_status()
+            for chunk in resp.iter_content(1024):
+                if chunk:
+                    f.write(chunk)
 
-            status = item.get('status', {})
-            pod_ip = status.get('podIP')
-
-            spec = item.get('spec', {})
-            host_network = spec.get('hostNetwork', False)
-            node_name = spec.get('nodeName')
-
-            # Skip incomplete entries
-            if (not pod_name) or (not pod_namespace) or (not pod_ip):
-                continue
-
-            # For pods that share the node's address, report that address
-            if host_network:
-                if node_name:
-                    cluster_ip_map[pod_ip] = node_name
-            # Otherwise, report pod-name.pod-namespace
-            else:
-                pod_ip_map[pod_ip] = '{}.{}'.format(pod_name, pod_namespace)
-
-        pod_ip_map.update(cluster_ip_map)
-        return pod_ip_map
+            # Push out the received data
+            f.seek(0)
+            remote_path = self.api.send_file(
+                DATA_TYPE, f.name, now, suffix=LOG_TYPE
+            )
+            if remote_path is not None:
+                data = {
+                    'path': remote_path,
+                    'log_type': LOG_TYPE,
+                }
+                self.api.send_signal(DATA_TYPE, data)
 
     def _set_hostname_match(self):
         # Ensure that the hostname validates. This is required for certain
@@ -148,16 +132,9 @@ class KubernetesWatcher(Service):
 
         self._set_hostname_match()
         try:
-            resolved = self._get_pods()
+            self._send_update(now)
         except Exception:
             logging.exception('Error getting pod data')
-            return
-
-        if not resolved:
-            logging.error('No mappings were found')
-            return
-
-        self._send_update(resolved, now)
 
 
 if __name__ == '__main__':

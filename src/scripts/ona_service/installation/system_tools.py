@@ -319,12 +319,6 @@ class RHEL_7(SystemdMixin, RedHatMixin, BaseSystem):
     """
 
 
-class UbuntuTrusty(UpstartMixin, DebianMixin, BaseSystem):
-    """
-    Supports Ubuntu installations with the upstart init system.
-    """
-
-
 class UbuntuXenial(SystemdMixin, DebianMixin, BaseSystem):
     """
     Supports Ubuntu installations with the systemd init system.
