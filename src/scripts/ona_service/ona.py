@@ -61,6 +61,7 @@ CONFIG_WHITELIST = {
     'syslog_facility',
     'syslog_server',
     'syslog_server_port',
+    'syslog_server_protocol',
     'snmp_enabled',
     'snmp_objectid',
     'snmp_server',
@@ -101,6 +102,7 @@ CONFIG_WHITELIST = {
     'ISE_CLIENT_CERT',
     'ISE_CLIENT_KEY',
     'ISE_CA_CERT',
+    'FLOWCAP_MAX_FILE_SIZE',
 }
 
 IPFIX_PREFIX = 'IPFIX_PROBE_'

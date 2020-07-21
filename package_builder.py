@@ -29,10 +29,10 @@ SYSTEM_INFO = {
         SystemInfo('rpm', REDHAT_COMMON + ('python27',)),
     'RHEL_7':
         SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python', 'sudo')),
+    'RHEL_8':
+        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python27', 'sudo')),
     'RaspbianJessie':
         SystemInfo('deb', RASBPI_COMMON),
-    'RaspbianWheezyUpstart':
-        SystemInfo('deb', RASBPI_COMMON + ('upstart',)),
     'UbuntuXenial':
         SystemInfo('deb', UBUNTU_COMMON + ('systemd-sysv', 'net-tools')),
     'UbuntuXenialContainer':
@@ -49,7 +49,6 @@ def main(proc_arch, version, system_type):
     postinst_script = 'postinst_{}.sh'.format(system_type)
     prerm_script = 'prerm.{}'.format(package_type)
     postrm_script = 'postrm.{}'.format(package_type)
-    compression_flag = '--{}-compression'.format(package_type)
 
     fpm_args = [
         'fpm',
@@ -65,13 +64,12 @@ def main(proc_arch, version, system_type):
         '--url', 'https://www.observable.net/',
         '--description', 'Observable Networks Sensor Appliance',
         '--maintainer',
-            'Observable Networks, Inc. <engineering@observable.net>',
+        'Observable Networks, Inc. <engineering@observable.net>',
         '--license', 'Apache License 2.0',
         '--vendor', 'obsrvbl.com',
         '--architecture', proc_arch,
         '--config-files', '/opt/obsrvbl-ona/config.auto',
         '--config-files', '/opt/obsrvbl-ona/config.local',
-        compression_flag, 'bzip2',
     ]
 
     for d in dependencies:

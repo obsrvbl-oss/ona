@@ -15,6 +15,7 @@ from __future__ import unicode_literals
 import io
 import logging
 import os
+import re
 
 from csv import DictWriter
 from datetime import timedelta
@@ -37,6 +38,15 @@ ENV_ISE_PASSWORD = 'OBSRVBL_ISE_PASSWORD'
 ENV_ISE_CLIENT_CERT = 'OBSRVBL_ISE_CLIENT_CERT'
 ENV_ISE_CLIENT_KEY = 'OBSRVBL_ISE_CLIENT_KEY'
 ENV_ISE_CA_CERT = 'OBSRVBL_ISE_CA_CERT'
+REQUIRED_KEYS = frozenset(
+    [
+        'state',
+        'timestamp',
+        'adNormalizedUser',
+        'ipAddresses',
+        'adUserDomainName',
+    ]
+)
 OUTPUT_FIELDNAMES = [
     '_time',
     'Computer',
@@ -48,6 +58,7 @@ OUTPUT_FIELDNAMES = [
 POLL_SECONDS = 600
 TICK_DELTA = timedelta(microseconds=1000)
 URL_TEMPLATE = 'https://{}:8910/pxgrid/control/{}'
+MAC_ADDRESS = re.compile(r'^([0-9a-fA-F]{2}:){5}([0-9a-fA-F]{2})$')
 
 
 class IsePoller(Service):
@@ -183,21 +194,34 @@ class IsePoller(Service):
 
         return sessions
 
+    def _normalize_item(self, item):
+        return item.encode('ascii', 'ignore').decode('ascii')
+
     def _normalize_sessions(self, sessions):
         for s in sessions:
+            if not REQUIRED_KEYS.issubset(frozenset(s.keys())):
+                continue
+
             if s['state'] != 'AUTHENTICATED':
                 continue
 
             if not s.get('ipAddresses', []):
                 continue
 
+            # Skip MAC addresses reported in the user field
+            user = s['adNormalizedUser']
+            if MAC_ADDRESS.match(user):
+                continue
+
             yield {
                 '_time': timestamp(dt_parse(s['timestamp'])),
                 'Computer': None,
-                'TargetUserName': s['adNormalizedUser'],
+                'TargetUserName': self._normalize_item(user),
                 'EventCode': None,
                 'ComputerAddress': s['ipAddresses'][0],
-                'ActiveDirectoryDomain': s['adUserDomainName'],
+                'ActiveDirectoryDomain': self._normalize_item(
+                    s['adUserDomainName']
+                ),
             }
 
     def execute(self, now=None):

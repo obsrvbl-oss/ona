@@ -94,20 +94,11 @@ PROGRAM_COMMANDS = {
     'ona-syslog-ad-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/syslog_ad_watcher.py'
     ],
-    'ona-check-point-pusher': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/check_point_pusher.py'
-    ],
     'ona-eta-monitor': [
         '/opt/obsrvbl-ona/system/supervisord/ona-eta-monitor.sh'
     ],
     'ona-eta-pusher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/eta_pusher.py'
-    ],
-    'ona-nvzflow-monitor': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/nvzflow_reader.py'
-    ],
-    'ona-nvzflow-pusher': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/nvzflow_pusher.py'
     ],
     'ona-kubernetes-watcher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/kubernetes_watcher.py'
@@ -126,13 +117,8 @@ ENABLE_FLAGS = [
     ('OBSRVBL_LOG_WATCHER', ['ona-log-watcher']),
     ('OBSRVBL_IPFIX_CAPTURER', ['ona-ipfix-monitor', 'ona-ipfix-pusher']),
     ('OBSRVBL_SYSLOG_AD_WATCHER', ['ona-syslog-ad-watcher']),
-    ('OBSRVBL_CHECK_POINT_PUSHER', ['ona-check-point-pusher']),
     ('OBSRVBL_KUBERNETES_WATCHER', ['ona-kubernetes-watcher']),
     ('OBSRVBL_ETA_CAPTURER', ['ona-eta-monitor', 'ona-eta-pusher']),
-    (
-        'OBSRVBL_NVZFLOW_CAPTURER',
-        ['ona-nvzflow-monitor', 'ona-nvzflow-pusher']
-    ),
     ('OBSRVBL_ISE_POLLER', ['ona-ise-poller']),
 ]
 
