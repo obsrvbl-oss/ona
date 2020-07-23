@@ -8,24 +8,18 @@ See [observable.net](https://observable.net) for more information about Observab
 
 The following platforms are officially supported:
 
-* Ubuntu 16.04 and later:
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb)
-    * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_i386.deb)
-* RHEL 6 and compatible (including CentOS 6* and Amazon Linux for EC2):
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_x86_64.rpm)
-    * [32-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_i386.rpm)
-* RHEL 7 and compatible (including CentOS 7):
-    * [64-bit](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_7_x86_64.rpm)
-* Raspberry Pi 2 Model B with Raspbian:
-    * [32-bit armhf](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RaspbianJessie_armhf.deb)
-* Docker (tested with CoreOS):
-    * [64-bit](https://github.com/obsrvbl/ona/blob/master/images/docker/Dockerfile)
+* [Ubuntu 16.04 and later](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb)
+* [RHEL 6 and compatible](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_x86_64.rpm)
+* [RHEL 7 and compatible](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_7_x86_64.rpm)
+* [RHEL 8 and compatible](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_8_x86_64.rpm)
+* [Raspberry Pi with Raspbian](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RaspbianJessie_armhf.deb)
+* [Docker](https://github.com/obsrvbl/ona/blob/master/images/docker/Dockerfile)
 
 To install the latest version on 18.04 (recommended for physical and virtual machine installations):
 
 ```
 # wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb
-# dpkg -i ona-service_UbuntuXenial_amd64.deb
+# sudo apt install ./ona-service_UbuntuXenial_amd64.deb
 ```
 
 (Replace `master` with a version tag if you need an older version.)

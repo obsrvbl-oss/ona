@@ -111,7 +111,11 @@ class SuricataAlertWatcher(Service):
         # midnight.
         next_time = utcnow() + timedelta(seconds=UPDATE_INTERVAL_SECONDS)
         should_update = (now and next_time.date() > now.date())
-        if (not os.path.exists(SURICATA_RULE_PATH)) or should_update:
+        if (not os.path.exists(os.path.dirname(SURICATA_RULE_PATH))):
+            logging.error(
+                'Rule directory does not exist. Is Suricata installed?'
+            )
+        elif (not os.path.exists(SURICATA_RULE_PATH)) or should_update:
             logging.info('Updating Suricata rules')
             self._update_rules()
             logging.info('Finished updating Suricata rules')

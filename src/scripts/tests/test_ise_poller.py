@@ -41,7 +41,7 @@ from ona_service.utils import gunzip_bytes, utc
 PATCH_PATH = 'ona_service.ise_poller.{}'.format
 
 
-class SyslogADWatcherTestCase(TestCase):
+class IsePollerTests(TestCase):
     def setUp(self):
         self.temp_dir = mkdtemp()
 
@@ -170,13 +170,28 @@ class SyslogADWatcherTestCase(TestCase):
                             'state': 'AUTHENTICATED',
                             'timestamp': '2019-01-29T12:34:01.100-06:00',
                         },
+                        # No adUserDomainName
+                        {
+                            'state': 'AUTHENTICATED',
+                            'ipAddresses': ['192.0.2.0', '192.0.2.1'],
+                            'timestamp': '2019-01-29T12:34:01.100-06:00',
+                            'adNormalizedUser': 'some-user\ufffd\ufffd',
+                        },
                         # Valid
                         {
                             'state': 'AUTHENTICATED',
                             'ipAddresses': ['192.0.2.0', '192.0.2.1'],
                             'timestamp': '2019-01-29T12:34:01.100-06:00',
-                            'adNormalizedUser': 'some-user',
-                            'adUserDomainName': 'some-domain',
+                            'adNormalizedUser': 'some-user\ufffd\ufffd',
+                            'adUserDomainName': u'some-domain\ufffd\ufffd',
+                        },
+                        # Valid
+                        {
+                            'state': 'AUTHENTICATED',
+                            'ipAddresses': ['192.0.2.0', '192.0.2.1'],
+                            'timestamp': '2019-01-29T12:34:01.100-06:00',
+                            'adNormalizedUser': '00:00:00:00:00:00',
+                            'adUserDomainName': u'some-domain\ufffd\ufffd',
                         },
                     ]
                 }

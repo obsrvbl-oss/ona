@@ -122,7 +122,7 @@ class NotificationPublisherTests(TestCase):
         end_time = time()
 
         self.assertEqual(
-            inst.logger.info.mock_calls, [call(x) for x in messages]
+            inst.logger.info.mock_calls, [call(dumps(x)) for x in messages]
         )
 
         elapsed = end_time - start_time
@@ -139,7 +139,7 @@ class NotificationPublisherTests(TestCase):
         messages = ['message_1', 'message_2']
         inst.publish(messages, 'info')
         self.assertEqual(
-            inst.logger.info.mock_calls, [call(x) for x in messages]
+            inst.logger.info.mock_calls, [call(dumps(x)) for x in messages]
         )
 
     def test_execute_no_handlers(self):
@@ -174,7 +174,7 @@ class NotificationPublisherTests(TestCase):
         # Observations are also published by default, with "info" priority
         for log_func in (inst.logger.error, inst.logger.info):
             self.assertEqual(
-                log_func.mock_calls, [call(x) for x in RESPONSE_OBJECTS]
+                log_func.mock_calls, [call(dumps(x)) for x in RESPONSE_OBJECTS]
             )
 
         # The state file should be filled in with the max time for each type
@@ -238,7 +238,48 @@ class NotificationPublisherTests(TestCase):
             datetime.strptime(dt, '<131>%Y-%m-%dT%H:%M:%S.%f+00:00')
             self.assertEqual(service, 'OBSRVBL')
             self.assertEqual(level, '[local0.ERROR]')
-            self.assertEqual(payload, '{}\x00'.format(obj))
+            self.assertEqual(payload, '{}\x00'.format(dumps(obj)))
+
+    def test_execute_syslog_tcp(self):
+        # TCP server socket
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        host = 'localhost'
+        port = 50007
+        server_sock.bind((host, port))
+        server_sock.listen(5)
+
+        # Send the messages
+        response = Response()
+        response.status_code = 200
+        response._content = dumps({'objects': RESPONSE_OBJECTS})
+
+        environment = {
+            'OBSRVBL_SYSLOG_ENABLED': 'true',
+            'OBSRVBL_SYSLOG_SERVER': host,
+            'OBSRVBL_SYSLOG_SERVER_PORT': str(port),
+            'OBSRVBL_SYSLOG_SERVER_PROTOCOL': 'TCP',
+            'OBSRVBL_SYSLOG_FACILITY': 'local0',
+            ENV_NOTIFICATION_TYPES: 'alerts-detail',
+        }
+        inst = self._get_instance(**environment)
+        inst.api.get_data.return_value = response
+        inst.execute()
+
+        # Grab them from the socket
+        client_sock, __ = server_sock.accept()
+        data = client_sock.recv(4096)
+        client_sock.close()
+        server_sock.close()
+
+        # Ensure fidelity
+        messages = data.split(b'\x00')
+        self.assertTrue(messages)
+        for msg, obj in zip(messages, RESPONSE_OBJECTS):
+            dt, hostname, service, level, payload = msg.split(' ', 4)
+            datetime.strptime(dt, '<131>%Y-%m-%dT%H:%M:%S.%f+00:00')
+            self.assertEqual(service, 'OBSRVBL')
+            self.assertEqual(level, '[local0.ERROR]')
 
     def test_execute_snmp(self):
         # Enable SNMP and listen for the UDP packets locally
@@ -277,7 +318,7 @@ class NotificationPublisherTests(TestCase):
             encoded_oid = unhexlify('2b060104019a2f0264')
             self.assertTrue(msg.count(encoded_oid), 2)
             # Encoded message should appear
-            self.assertIn(str(obj), msg)
+            self.assertIn(dumps(obj), msg)
 
     def test_execute_snmpv3(self):
         # Enable SNMPv3 and listen for the UDP packets locally
@@ -319,4 +360,4 @@ class NotificationPublisherTests(TestCase):
             encoded_oid = unhexlify('2b060104019a2f0264')
             self.assertTrue(msg.count(encoded_oid), 2)
             # Encoded message should appear
-            self.assertIn(str(obj), msg)
+            self.assertIn(dumps(obj), msg)

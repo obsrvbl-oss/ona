@@ -26,11 +26,8 @@ rndstr="$(/usr/bin/mcookie | /usr/bin/cut -c -6)"
 mv /root/ona/motd.tail /etc/update-motd.d/01-obsrvbl
 
 # Install the ONA service package
-apt-add-repository "deb https://sensor.ext.obsrvbl.com/obsrvbl-apt/ xenial main"
-apt-key add /root/ona/obsrvbl_repo.pub
-sudo apt-get update
-sudo apt-get install -y netsa-pkg || true
-sudo apt-get install -y ona-service
+DEBIAN_FRONTEND=noninteractive apt install -y /root/ona/netsa-pkg.deb
+DEBIAN_FRONTEND=noninteractive apt install -y /root/ona/ona-service.deb
 
 # Mark the Observable repository for automatic update
 if [ -e /etc/apt/apt.conf.d/50unattended-upgrades ]; then

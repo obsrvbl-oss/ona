@@ -15,9 +15,10 @@ from __future__ import print_function, unicode_literals
 
 # python builtins
 from os import environ as os_environ
+from json import dumps
 from logging import getLogger, DEBUG, Formatter
 from logging.handlers import SysLogHandler
-from socket import gethostname
+from socket import gethostname, SOCK_DGRAM, SOCK_STREAM
 from time import gmtime, sleep
 
 # local
@@ -46,6 +47,7 @@ CONFIG_DEFAULTS = {
                       '[{facility}.{priority}] {message}'),
     'syslog_server': None,
     'syslog_server_port': 162,
+    'syslog_server_protocol': 'udp',
 
     'snmp_enabled': 'false',
     'snmp_objectid': None,
@@ -112,11 +114,20 @@ def _snmp_log_handler(config):
 def _syslog_log_handler(config, hostname):
     host = config('syslog_server')
     port = int(config('syslog_server_port'))
+
+    if config('syslog_server_protocol').lower() == 'tcp':
+        socktype = SOCK_STREAM
+    else:
+        socktype = SOCK_DGRAM
+
     log_format = config('syslog_format')
     facility = config('syslog_facility')
 
-    handler = SysLogHandler((host, port),
-                            SysLogHandler.facility_names[facility])
+    handler = SysLogHandler(
+        (host, port),
+        SysLogHandler.facility_names[facility],
+        socktype=socktype,
+    )
     log_format = log_format.format(
         time='%(asctime)s.%(msecs)d+00:00',
         sensor_hostname=hostname,
@@ -159,8 +170,9 @@ class NotificationPublisher(Service):
 
     def _publish(self, message, priority):
         log_func = getattr(self.logger, priority)
+        formatted = dumps(message)
         try:
-            log_func(message)
+            log_func(formatted)
         except Exception as ex:
             logger.warning(
                 "Got error='%s' when trying to public "
@@ -173,7 +185,7 @@ class NotificationPublisher(Service):
             logger.info(
                 "Published message, priority='%s', message='%s'",
                 priority,
-                message
+                formatted
             )
 
     def publish(self, messages, priority):

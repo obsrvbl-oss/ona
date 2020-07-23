@@ -111,12 +111,6 @@ OBSRVBL_IPFIX_CONF="/opt/obsrvbl-ona/ipfix/sensor.conf"
 # OBSRVBL_IPFIX_PROBE_6_TYPE="sflow"
 # OBSRVBL_IPFIX_PROBE_6_PORT="6343"
 
-# If monitoring a remote share set the read-only flag to true
-# Also specify the IP address of the share's host
-OBSRVBL_SHARE_FILE="README.txt"
-OBSRVBL_SHARE_READ_ONLY="false"
-OBSRVBL_SHARE_IP="127.0.0.1"
-
 ##
 # ona-syslog-ad-watcher
 ##
@@ -138,12 +132,6 @@ OBSRVBL_ETA_CAPTURE_IFACE="any"
 OBSRVBL_ETA_CAPTURE_SECONDS="600"
 OBSRVBL_ETA_CAPTURE_MBITS="32"
 OBSRVBL_ETA_UDP_PORT="2055"
-
-##
-# nvzflow-monitor
-##
-OBSRVBL_NVZFLOW_CAPTURER="false"
-OBSRVBL_NVZFLOW_LOG_DIR="/opt/obsrvbl-ona/logs/nvzflow"
 
 ##
 # kubernetes-watcher

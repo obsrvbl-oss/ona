@@ -314,8 +314,14 @@ class RHEL_6(UpstartMixin, RedHatMixin, BaseSystem):
 class RHEL_7(SystemdMixin, RedHatMixin, BaseSystem):
     """
     Supports Red Hat Enterprise Linux 7-compatible distributions, including
-    CentOS 7 and Scientific Linux 7. Not compatible with earlier versions,
-    which do not use systemd.
+    CentOS. Not compatible with earlier versions, which do not use systemd.
+    """
+
+
+class RHEL_8(SystemdMixin, RedHatMixin, BaseSystem):
+    """
+    Supports Red Hat Enterprise Linux 8-compatible distributions, including
+    CentOS 8. Not compatible with earlier versions.
     """
 
 

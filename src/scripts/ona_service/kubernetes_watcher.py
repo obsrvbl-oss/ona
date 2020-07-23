@@ -30,6 +30,9 @@ K8S_CA_CERT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
 K8S_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'
 
 DATA_TYPE = 'logs'
+ENV_POD_NAME = 'OBSRVBL_POD_NAME'
+ENV_KUBERNETES_LABEL = 'OBSRVBL_KUBERNETES_LABEL'
+DEFAULT_KUBERNETES_LABEL = 'obsrvbl-ona'
 LOG_TYPE = 'k8s-pods'
 POLL_SECONDS = 3600
 
@@ -51,13 +54,16 @@ class KubernetesWatcher(Service):
         )
         self.k8s_token = self._read_if_exists(k8s_token_path)
 
+        # Label for the pods in the daemonset
+        self.k8s_label = os.environ.get(
+            ENV_KUBERNETES_LABEL, DEFAULT_KUBERNETES_LABEL
+        )
+
         self.match_hostname = (
             requests.packages.urllib3.connection.match_hostname
         )
 
-        kwargs.update({
-            'poll_seconds': POLL_SECONDS,
-        })
+        kwargs['poll_seconds'] = POLL_SECONDS
         super(KubernetesWatcher, self).__init__(*args, **kwargs)
 
     def _read_if_exists(self, *args, **kwargs):
@@ -69,16 +75,60 @@ class KubernetesWatcher(Service):
         except (IOError, OSError):
             return None
 
-    def _send_update(self, now):
-        # Talk to the Kubernetes API server discovered from the environment
-        url = 'https://{}:{}/api/v1/pods/'.format(self.k8s_host, self.k8s_port)
-        headers = {
+    def _get_headers(self):
+        return {
             'Authorization': 'Bearer {}'.format(self.k8s_token),
             'Accept': 'application/json',
         }
+
+    def _should_update(self):
+        # We query the Kubernetes API server to see what other instances
+        # of this service are running, using the `labelSelector` filter.
+        # If we're the first one in the list (lexicographically), we will
+        # continue on. Otherwise we'll go back to sleep and check later.
+        this_pod_name = os.environ[ENV_POD_NAME]
+
+        url = 'https://{}:{}/api/v1/pods/'.format(self.k8s_host, self.k8s_port)
+        params = {'labelSelector': 'name={}'.format(self.k8s_label)}
         get_kwargs = {
             'url': url,
-            'headers': headers,
+            'headers': self._get_headers(),
+            'params': params,
+            'verify': self.k8s_ca_cert_path,
+        }
+
+        # Make the request and parse the response
+        resp = requests.get(**get_kwargs)
+        resp.raise_for_status()
+        pod_data = resp.json()
+
+        # Pull out the names of the nodes running this application
+        all_pods = []
+        for item in pod_data.get('items', []):
+            metadata = item.get('metadata', {})
+            pod_name = metadata.get('name')
+            if pod_name:
+                all_pods.append(pod_name)
+
+        # If we are the first one, we win the election
+        all_pods.sort()
+        if all_pods and (all_pods[0] == this_pod_name):
+            return True
+
+        # Otherwise we cede to the other pods
+        logging.info(
+            'This pod (%s) will not do the API query: %s',
+            this_pod_name,
+            ''.join(all_pods[:1])
+        )
+        return False
+
+    def _send_update(self, now):
+        # Talk to the Kubernetes API server discovered from the environment
+        url = 'https://{}:{}/api/v1/pods/'.format(self.k8s_host, self.k8s_port)
+        get_kwargs = {
+            'url': url,
+            'headers': self._get_headers(),
             'verify': self.k8s_ca_cert_path,
             'stream': True,
         }
@@ -131,10 +181,18 @@ class KubernetesWatcher(Service):
             return
 
         self._set_hostname_match()
+
         try:
-            self._send_update(now)
+            should_update = self._should_update()
         except Exception:
-            logging.exception('Error getting pod data')
+            logging.exception('Error determining pod update instructions')
+            should_update = False
+
+        if should_update:
+            try:
+                self._send_update(now)
+            except Exception:
+                logging.exception('Error updating pod data')
 
 
 if __name__ == '__main__':

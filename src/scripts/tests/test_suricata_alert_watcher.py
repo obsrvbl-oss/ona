@@ -40,8 +40,7 @@ def dummy_utcoffset():
     return 0
 
 
-def patch_path(suffix):
-    return 'ona_service.suricata_alert_watcher.{}'.format(suffix)
+patch_path = 'ona_service.suricata_alert_watcher.{}'.format
 
 
 class SuricataAlertWatcherTest(TestCase):
@@ -200,8 +199,7 @@ class SuricataAlertWatcherTest(TestCase):
             'foo', 'bar', 'oof']
 
         my_rules = '{}/some.rules'.format(self.tempdir)
-        with patch('ona_service.suricata_alert_watcher.SURICATA_RULE_PATH',
-                   my_rules):
+        with patch(patch_path('SURICATA_RULE_PATH'), my_rules):
             watcher._update_rules()
 
         with open(my_rules, 'rb') as r:
@@ -218,8 +216,15 @@ class SuricataAlertWatcherTest(TestCase):
     def test_execute(self, mock_rules, mock_upload, mock_rotate_logs):
         watcher = SuricataAlertWatcher()
 
-        now = datetime(2015, 1, 1)
-        watcher.execute(now)
+        # Rules exist
+        rule_path = path.join(self.tempdir, 'downloaded.rules')
+        with open(rule_path, 'wt') as outfile:
+            outfile.write(b'rule_data\n')
+
+        # 2015 was a long time ago, so it's time to update
+        with patch(patch_path('SURICATA_RULE_PATH'), rule_path):
+            now = datetime(2015, 1, 1)
+            watcher.execute(now)
 
         mock_rotate_logs.assert_called_with(watcher)
         mock_upload.assert_called_with(watcher, now, compress=True)
@@ -232,12 +237,31 @@ class SuricataAlertWatcherTest(TestCase):
     def test_execute_no_rules(
         self, mock_rules, mock_upload, mock_rotate_logs, mock_utc
     ):
-        now = datetime(2015, 1, 1)
-        mock_utc.return_value = now
         watcher = SuricataAlertWatcher()
 
-        watcher.execute(now)
+        rule_path = path.join(self.tempdir, 'downloaded.rules')
+
+        # 2015 is now, according to this test, so it's not time to update.
+        # However, the rule file doesn't exist - so we will.
+        now = datetime(2015, 1, 1)
+        mock_utc.return_value = now
+        with patch(patch_path('SURICATA_RULE_PATH'), rule_path):
+            watcher.execute(now)
 
         mock_rotate_logs.assert_called_with(watcher)
         mock_upload.assert_called_with(watcher, now, compress=True)
         self.assertEquals(mock_rules.call_count, 1)
+
+    @patch(patch_path('check_output'), autospec=True)
+    def test_execute_no_suricata(self, mock_check_output):
+        watcher = SuricataAlertWatcher()
+        watcher.api = MagicMock()
+
+        # It's time to update, but the rule directory doesn't exist.
+        # So we won't.
+        rule_path = path.join(self.tempdir, 'different-dir/downloaded.rules')
+        with patch(patch_path('SURICATA_RULE_PATH'), rule_path):
+            now = datetime(2015, 1, 1)
+            watcher.execute(now)
+
+        self.assertFalse(watcher.api.mock_calls)
