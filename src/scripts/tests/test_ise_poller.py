@@ -14,6 +14,7 @@
 from __future__ import print_function, unicode_literals
 
 import io
+import os
 
 from datetime import datetime
 from json import dumps
@@ -33,8 +34,10 @@ from ona_service.ise_poller import (
     ENV_ISE_PASSWORD,
     ENV_ISE_SERVER_NAME,
     IsePoller,
-    TICK_DELTA,
     OUTPUT_FIELDNAMES,
+    SEND_FILE_TYPE,
+    SENSORDATA_TYPE,
+    TICK_DELTA,
 )
 from ona_service.utils import gunzip_bytes, utc
 
@@ -95,6 +98,7 @@ class IsePollerTests(TestCase):
             ENV_ISE_CA_CERT,
         ]:
             inst = self._get_instance(**{env_var: ''})
+            inst.api.get_data.return_value.json.return_value = {}
             inst.execute()
             self.assertEqual(mock_post.call_count, 0)
 
@@ -106,8 +110,101 @@ class IsePollerTests(TestCase):
                 outfile.write(b'\x80-----END NONSENSE-----\n')
 
             inst = self._get_instance()
+            inst.api.get_data.return_value.json.return_value = {}
             inst.execute()
             self.assertEqual(mock_post.call_count, 0)
+
+    @patch(PATCH_PATH('post'), autospec=True)
+    def test_rewrite_urls(self, mock_post):
+        # When the server name is an IP address...
+        inst = self._get_instance(**{ENV_ISE_SERVER_NAME: '127.0.0.1'})
+        inst.api.get_data.return_value.json.return_value = {}
+
+        data = {
+            'accountState': 'ENABLED',
+            'services': [
+                {
+                    'nodeName': 'service-node',
+                    'properties': {
+                        'restBaseUrl': 'https://localhost:8241'
+                    },
+                },
+            ],
+            'secret': 'service-node-secret',
+        }
+        activate_resp = Response()
+        activate_resp._content = dumps(data).encode('utf-8')
+        activate_resp.status_code = 200
+        mock_post.return_value = activate_resp
+
+        # ...The rewrite_urls flag gets set
+        inst.execute()
+        self.assertTrue(inst.rewrite_urls)
+
+        # ...And URLs get re-written, preserving ports
+        actual_urls = {c[1]['url'] for c in mock_post.call_args_list}
+        expected_urls = {
+            'https://127.0.0.1:8910/pxgrid/control/AccountActivate',
+            'https://127.0.0.1:8910/pxgrid/control/ServiceLookup',
+            'https://127.0.0.1:8910/pxgrid/control/AccessSecret',
+            'https://127.0.0.1:8241/getSessions'
+        }
+        self.assertEqual(actual_urls, expected_urls)
+        self.assertFalse(any(c[1]['verify'] for c in mock_post.call_args_list))
+
+    @patch(PATCH_PATH('post'), autospec=True)
+    def test_execute_server(self, mock_post):
+        # No manual configuration is set
+        env_vars = {
+            ENV_ISE_SERVER_NAME: '',
+            ENV_ISE_CLIENT_CERT: '',
+            ENV_ISE_CLIENT_KEY: '',
+            ENV_ISE_CA_CERT: '',
+        }
+        inst = self._get_instance(**env_vars)
+
+        # The server supplies configuration
+        server_resp = {
+            'config': {
+                'ISE_SERVER_NAME': 'localhost:8000',
+                'ISE_PASSWORD': 'ona-password',
+                'ISE_NODE_NAME': 'ona-node',
+                'ISE_DATA_CLIENT_CERT': (
+                    '-----BEGIN CERTIFICATE-----\r\n'
+                    '-----END CERTIFICATE-----\r\n'
+                ),
+                'ISE_DATA_CLIENT_KEY': (
+                    '-----BEGIN RSA PRIVATE KEY-----\r\n'
+                    '-----END RSA PRIVATE KEY-----\r\n'
+                ),
+                'ISE_DATA_CA_CERT': (
+                    '-----BEGIN CERTIFICATE-----\r\n'
+                    '-----END CERTIFICATE-----\r\n'
+                ),
+            }
+        }
+        inst.api.get_data.return_value.json.return_value = server_resp
+
+        # The service should start, and the server's data should be saved
+        inst.execute()
+        self.assertEqual(mock_post.call_count, 1)
+
+        for attr, key in (
+            ('server_name', 'ISE_SERVER_NAME'),
+            ('password', 'ISE_PASSWORD'),
+            ('node_name', 'ISE_NODE_NAME'),
+        ):
+            self.assertEqual(getattr(inst, attr), server_resp['config'][key])
+
+        for attr, key in (
+            ('client_cert', 'ISE_DATA_CLIENT_CERT'),
+            ('client_key', 'ISE_DATA_CLIENT_KEY'),
+            ('ca_cert', 'ISE_DATA_CA_CERT'),
+        ):
+            file_path = getattr(inst, attr)
+            self.assertEqual(oct(os.stat(file_path).st_mode)[-3:], '600')
+            with open(file_path, 'rt') as f:
+                self.assertEqual(f.read(), server_resp['config'][key])
 
     @patch(PATCH_PATH('post'), autospec=True)
     def test_exceute(self, mock_post):
@@ -210,10 +307,11 @@ class IsePollerTests(TestCase):
         output = {}
 
         def send_file(data_type, path, now, suffix=None):
+            self.assertEqual(data_type, SEND_FILE_TYPE)
             with io.open(path, 'rb') as infile:
                 output[index] = infile.read()
 
-            return {'remote_path': 'file:///tmp/ise_data.csv.gz'}
+            return 'file:///tmp/ise_data.csv.gz'
 
         # Get an IsePoller instance
         inst = self._get_instance(
@@ -231,5 +329,11 @@ class IsePollerTests(TestCase):
             '1548786841,,some-user,,192.0.2.0,some-domain',
         ]
         self.assertEqual(actual, expected)
-        self.assertEqual(inst.api.send_file.call_count, 1)
-        self.assertEqual(inst.api.send_signal.call_count, 1)
+        inst.api.send_signal.assert_called_once_with(
+            data_type='sensordata',
+            data={
+                'timestamp': self.now.isoformat(),
+                'data_type': SENSORDATA_TYPE,
+                'data_path': 'file:///tmp/ise_data.csv.gz',
+            }
+        )

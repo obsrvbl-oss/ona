@@ -35,6 +35,7 @@ from ona_service.utils import (
     send_observations,
     gzip_bytes,
     gunzip_bytes,
+    is_ip_address,
 )
 
 
@@ -243,3 +244,18 @@ class GzipTestCase(TestCase):
     def test_gzip_bytes(self):
         gz_data = gzip_bytes(self.data)
         self.assertEqual(gunzip_bytes(gz_data), self.data)
+
+
+class IsIPAddressTests(TestCase):
+    def test_basic(self):
+        for item, expected in [
+            ('192.0.2.0', True),
+            ('2001:db8::', True),
+            ('192.0.2.256', False),
+            ('2001:db8:::', False),
+            ('localhost', False),
+            ('example.org', False),
+            ('192.0.2.0:443', False),
+        ]:
+            actual = is_ip_address(item)
+            self.assertEqual(actual, expected)

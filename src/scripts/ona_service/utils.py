@@ -342,3 +342,15 @@ class persistent_dict(dict):
         res = super(persistent_dict, self).__setitem__(key, value)
         self._save()
         return res
+
+
+def is_ip_address(x):
+    for family in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(family, x)
+        except socket.error:
+            pass
+        else:
+            return True
+
+    return False

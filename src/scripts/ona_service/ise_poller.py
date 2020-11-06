@@ -20,18 +20,22 @@ import re
 from csv import DictWriter
 from datetime import timedelta
 from gzip import GzipFile
-from tempfile import NamedTemporaryFile
+from os.path import join
+from tempfile import gettempdir, NamedTemporaryFile
+from urlparse import urlparse
 
 from requests import post
 from dateutil.parser import parse as dt_parse
 
 from service import Service
-from utils import timestamp, utcnow, utc
+from utils import create_dirs, is_ip_address, timestamp, utcnow, utc
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-DATA_TYPE = 'syslog_ad'
+SEND_FILE_TYPE = 'syslog_ad'
+SENSORDATA_TYPE = 'ise-events'
+
 ENV_ISE_NODE_NAME = 'OBSRVBL_ISE_NODE_NAME'
 ENV_ISE_SERVER_NAME = 'OBSRVBL_ISE_SERVER_NAME'
 ENV_ISE_PASSWORD = 'OBSRVBL_ISE_PASSWORD'
@@ -74,6 +78,8 @@ class IsePoller(Service):
         self.ca_cert = os.environ.get(ENV_ISE_CA_CERT, '')
 
         self.last_poll = None
+        self.cert_dir = join(gettempdir(), 'ise_poller')
+        self.rewrite_urls = False
 
     def _validate_certificate(self, file_path, env_var):
         # The certificate file has to exist
@@ -144,14 +150,61 @@ class IsePoller(Service):
 
         return True
 
+    def _write_remote_data(self, file_path, data):
+        # Touch a file, change its permissions so others can't read it, and
+        # then write to it.
+        with open(file_path, mode='wt') as f:
+            pass
+
+        os.chmod(file_path, 0o600)
+
+        with open(file_path, mode='wt') as f:
+            f.write(data)
+
+    def _get_remote_configuration(self):
+        # Query the server for ISE configuration
+        endpoint = 'sensors/{}'.format(self.api.ona_name)
+        try:
+            resp = self.api.get_data(endpoint).json()['config']
+        except Exception:
+            return
+
+        # Save the values from the response
+        for key, attr in (
+            ('ISE_SERVER_NAME', 'server_name'),
+            ('ISE_PASSWORD', 'password'),
+            ('ISE_NODE_NAME', 'node_name'),
+        ):
+            if key in resp:
+                setattr(self, attr, resp[key])
+
+        # Write the retrieved certificated data to the temporary directory.
+        create_dirs(self.cert_dir)
+        for key, attr in (
+            ('ISE_DATA_CLIENT_CERT', 'client_cert'),
+            ('ISE_DATA_CLIENT_KEY', 'client_key'),
+            ('ISE_DATA_CA_CERT', 'ca_cert'),
+        ):
+            data = resp.get(key, '')
+            file_path = join(self.cert_dir, attr)
+            setattr(self, attr, file_path)
+            self._write_remote_data(file_path, data)
+
     def _pxgrid_request(self, url, json_data, password):
+        verify = self.ca_cert
+        if self.rewrite_urls:
+            parsed_url = urlparse(url)
+            netloc = '{}:{}'.format(self.server_name, parsed_url.port)
+            url = parsed_url._replace(netloc=netloc).geturl()
+            verify = False
+
         response = post(
             url=url,
             json=json_data,
             auth=(self.node_name, password),
             headers={'Accept': 'application/json'},
             cert=(self.client_cert, self.client_key),
-            verify=self.ca_cert,
+            verify=verify,
         )
         response.raise_for_status()
         return response.json()
@@ -234,10 +287,15 @@ class IsePoller(Service):
             minute=(now.minute // 10) * 10, second=0, microsecond=0
         )
 
-        # Check the configuration and display helpful error messages
+        # Check the saved configuration. If it's not complete, try to retrieve
+        # configuration from the server.
         if not self._validate_configuration():
-            logging.error('Invalid configuration, could not start')
-            return
+            self._get_remote_configuration()
+            if not self._validate_configuration():
+                logging.error('Invalid configuration, could not start')
+                return
+
+        self.rewrite_urls = is_ip_address(self.server_name)
 
         # Activate the pxGrid session
         if not self._activate():
@@ -257,7 +315,11 @@ class IsePoller(Service):
             return
 
         # Normalize the data and send it out
-        normalized_sessions = self._normalize_sessions(sessions)
+        normalized_sessions = list(self._normalize_sessions(sessions))
+        if not normalized_sessions:
+            logging.info('No normalized sessions since %s', self.last_poll)
+            return
+
         with NamedTemporaryFile() as f:
             with GzipFile(fileobj=f) as gz_f:
                 writer = DictWriter(gz_f, fieldnames=OUTPUT_FIELDNAMES)
@@ -266,14 +328,18 @@ class IsePoller(Service):
             f.flush()
 
             remote_path = self.api.send_file(
-                DATA_TYPE,
+                SEND_FILE_TYPE,
                 f.name,
                 ts,
                 suffix='{:04}'.format(now.minute * 60 + now.second)
             )
             if remote_path is not None:
-                data = {'path': remote_path, 'log_type': DATA_TYPE}
-                self.api.send_signal('logs', data=data)
+                data = {
+                    'timestamp': now.isoformat(),
+                    'data_type': SENSORDATA_TYPE,
+                    'data_path': remote_path,
+                }
+                self.api.send_signal(data_type='sensordata', data=data)
 
         # Save the last poll time
         self.last_poll = max(dt_parse(s['timestamp']) for s in sessions)

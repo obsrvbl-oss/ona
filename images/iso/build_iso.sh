@@ -21,7 +21,7 @@
 #    wrong.
 #
 
-RELEASE="${RELEASE:-18.04.4}"
+RELEASE="${RELEASE:-18.04.5}"
 ARCH="${ARCH:-amd64}"
 
 UBUNTU="http://cdimage.ubuntu.com/ubuntu/releases"
