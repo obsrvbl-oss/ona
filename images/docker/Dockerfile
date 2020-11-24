@@ -9,7 +9,7 @@ RUN curl -L -O https://github.com/bbayles/netsa-pkg/releases/download/v0.1.12/ne
 RUN dpkg -i netsa-pkg.deb
 
 # Download and install ONA service
-RUN curl -O https://s3.amazonaws.com/onstatic/ona/master/ona-service_UbuntuXenialContainer_amd64.deb
+RUN curl -O https://s3.amazonaws.com/onstatic/ona-service/master/ona-service_UbuntuXenialContainer_amd64.deb
 RUN dpkg -i ona-service_UbuntuXenialContainer_amd64.deb
 
 # Switch to the unprivileged user, set some local configuration, and start.
