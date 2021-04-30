@@ -11,17 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
-import io
 import logging
 import os
 from tempfile import NamedTemporaryFile
 
 # local
-from api import requests
-from service import Service
+from ona_service.api import requests
+from ona_service.service import Service
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -64,15 +61,15 @@ class KubernetesWatcher(Service):
         )
 
         kwargs['poll_seconds'] = POLL_SECONDS
-        super(KubernetesWatcher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def _read_if_exists(self, *args, **kwargs):
         # Pass *args and **kwargs to io.open. Read the file handle and return
         # its data. If the file doesn't exist, return None.
         try:
-            with io.open(*args, **kwargs) as infile:
+            with open(*args, **kwargs) as infile:
                 return infile.read()
-        except (IOError, OSError):
+        except OSError:
             return None
 
     def _get_headers(self):

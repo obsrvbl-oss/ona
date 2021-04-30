@@ -11,32 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
-import io
 import logging
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from glob import glob
-from gzip import GzipFile
-from json import dumps
+from gzip import compress as gz_compress
 from os import fstat, fsync, stat
 from os.path import basename, exists, join, splitext
-from subprocess import CalledProcessError, check_output, Popen, PIPE
+from subprocess import CalledProcessError, check_output
 from tempfile import NamedTemporaryFile
 
 # local
-from service import Service
-from utils import CommandOutputFollower, utcnow, utcoffset, get_ip
-
-# third-party (OS-provided)
-try:
-    import psutil
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
+from ona_service.service import Service
+from ona_service.utils import CommandOutputFollower, utcnow, utcoffset, get_ip
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -46,7 +34,7 @@ POLL_SECONDS = 10
 SEND_DELTA = timedelta(seconds=60)  # want at least a minute between dumps
 
 
-class WatchNode(object):
+class WatchNode:
     def __init__(self, log_type, api, send_delta=SEND_DELTA):
         """
         Arguments:
@@ -57,10 +45,6 @@ class WatchNode(object):
         self.api = api
         self.checkpoint()
         self.send_delta = send_delta
-
-    def _write_compressed(self, fileobj):
-        with GzipFile(fileobj=fileobj, mode='w') as gz_f:
-            gz_f.writelines(self.data)
 
     def checkpoint(self, now=None):
         self.data = []
@@ -79,9 +63,9 @@ class WatchNode(object):
             return
 
         logging.info('Sending data for processing at {}'.format(now))
-        with NamedTemporaryFile() as f:
+        with NamedTemporaryFile('w+b') as f:
             if compress:
-                self._write_compressed(f)
+                f.writelines(gz_compress(line) for line in self.data)
             else:
                 f.writelines(self.data)
             f.flush()
@@ -116,23 +100,23 @@ class LogNode(WatchNode):
             log_type: name to give the log
             api: api for interacting with the proxy
         """
-        self.encoding = kwargs.pop('encoding', None)
+        self.encoding = kwargs.pop('encoding', 'utf-8')
         self.errors = kwargs.pop('errors', 'ignore')
         self.log_path = log_path
         self.log_file = None
         self.log_file_inode = None
         self._set_fd(seek_to_end=True)
-        super(LogNode, self).__init__(log_type, api)
+        super().__init__(log_type, api)
 
     def _set_fd(self, seek_to_end=False):
         try:
-            self.log_file = io.open(
+            self.log_file = open(
                 self.log_path,
-                mode='r',
+                mode='rt',
                 encoding=self.encoding,
                 errors=self.errors,
             )
-        except (IOError, OSError) as err:
+        except OSError as err:
             logging.error('Could not open %s: %s', self.log_path, err)
             return
 
@@ -164,6 +148,7 @@ class LogNode(WatchNode):
 
         # Retrieve line-buffered data from the log
         data = self.log_file.readlines()
+        data = [x.encode(self.encoding, errors=self.errors) for x in data]
         self.flush_data(data, now, compress=True)
 
         # Check to see if the inode associated with the log path has changed.
@@ -178,136 +163,6 @@ class LogNode(WatchNode):
             self.cleanup()
 
 
-class StatNode(WatchNode):
-    """
-    Unlike LogNode, this reads system stats for logging.
-    """
-    def __init__(self, log_type, api):
-        """
-        Arguments:
-            log_type: name to give the log
-            api: api for interacting with the proxy
-        """
-        super(StatNode, self).__init__(log_type, api)
-        # maintain stats
-        self.last_cpu_times = None
-        # warm the data up
-        self._gather()
-
-    def _cpu_times_percent(self, percpu=False):
-        """This attempts to emulate cpu_times_percent._asdict() in later
-        versions of psutil."""
-        new_cpu_times = psutil.cpu_times(percpu=percpu)
-        if not self.last_cpu_times:
-            self.last_cpu_times = new_cpu_times
-            return {}
-        # compute the deltas between old times and new times
-        percent_times = []
-        for new_times, old_times in zip(new_cpu_times, self.last_cpu_times):
-            new_dict = new_times._asdict()
-            old_dict = old_times._asdict()
-            delta_dict = {k: new_dict[k] - old_dict[k] for k in new_dict}
-            total_delta = sum(delta_dict.values())
-            if total_delta == 0:
-                # the cpu must be broken because it can't just stop.
-                return {}
-            # convert deltas to percentages
-            percent_times.append(
-                {k: 100.0 * delta_dict[k] / total_delta for k in delta_dict}
-            )
-        # update the tracking object
-        self.last_cpu_times = new_cpu_times
-        return percent_times
-
-    def _virtual_memory(self):
-        # Smooth out differences in psutil versions: phymem_usage was replaced
-        try:
-            data = psutil.phymem_usage()
-        except AttributeError:
-            data = psutil.virtual_memory()
-
-        return dict(data._asdict())
-
-    def _disk_usage(self, all=False):
-        du = []
-        for part in psutil.disk_partitions(all=all):
-            du.append(
-                dict(
-                    path=part.mountpoint,
-                    **psutil.disk_usage(part.mountpoint)._asdict()
-                )
-            )
-        return du
-
-    def _net_io_counters(self, pernic=False):
-        # Smooth out differences in psutil versions: network_io_counters was
-        # replaced
-        try:
-            nic_counters = psutil.network_io_counters(pernic=pernic)
-        except AttributeError:
-            nic_counters = psutil.net_io_counters(pernic=pernic)
-
-        nic_stats = []
-        for nic, counters in nic_counters.iteritems():
-            stats = {'nic': nic}
-            # psutil 0.4.1 does not capture drops/errors/etc. grab those
-            ifconfig = Popen(['ifconfig', nic], stdout=PIPE, stderr=PIPE)
-            out, __ = ifconfig.communicate()
-            for line in out.splitlines():
-                line = line.strip()
-                # we only care about RX rates for now
-                if not line.startswith('RX packets'):
-                    continue
-                # now we have the RX packets line
-                parts = line.split()
-                for part in parts[2:]:  # skip "RX" and "packets"
-                    try:
-                        name, value = part.split(':')
-                        value = int(value)
-                    except ValueError:
-                        continue
-                    stats[name] = value
-            stats.update(counters._asdict())
-            nic_stats.append(stats)
-        return nic_stats
-
-    def _gather(self):
-        if not HAS_PSUTIL:
-            return {}
-        start = datetime.utcnow()
-        stats = {}
-
-        # cpu utilization (per cpu)
-        stats['cpu_times_percent'] = self._cpu_times_percent(percpu=True)
-
-        # memory utilization
-        stats['virtual_memory'] = self._virtual_memory()
-
-        # disk utilization
-        stats['disk_usage'] = self._disk_usage(all=True)
-
-        # networks stats from all interface (rx/tx/drops/errors/etc)
-        stats['net_io_counters'] = self._net_io_counters(pernic=True)
-
-        # some book-keeping
-        end = datetime.utcnow()
-        stats['starttime'] = start.isoformat()
-        stats['runtime'] = str(end - start)
-        return stats
-
-    def check_data(self, now=None):
-        # no handler -> nothing we can do
-        if not HAS_PSUTIL:
-            return
-        # we only want to gather data once a minute
-        now = now or utcnow()
-        if (now - self.last_send) >= SEND_DELTA:
-            logging.info('gathering stats')
-            # get stats, store in data
-            data = [dumps(self._gather(), sort_keys=True)]
-            self.flush_data(data, now)
-
-
 class SystemdJournalNode(WatchNode):
     def __init__(self, log_type, api, journalctl_args):
         """
@@ -318,7 +173,7 @@ class SystemdJournalNode(WatchNode):
               for example: ['--unit=ssh.service', 'SYSLOG_FACILITY=10']
         """
         self.unit_name = log_type
-        super(SystemdJournalNode, self).__init__(log_type, api)
+        super().__init__(log_type, api)
 
         self.command_args = ['journalctl', '-f', '--lines=1'] + journalctl_args
         self._start_follower()
@@ -357,22 +212,16 @@ class LogWatcher(Service):
         kwargs.update({
             'poll_seconds': POLL_SECONDS,
         })
-        super(LogWatcher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.log_nodes = []
 
-        # Sensor stats
-        if kwargs.get('watch_stats', False):
-            self.log_nodes.append(
-                StatNode(log_type='stats_log', api=self.api)
-            )
-
         # File-based logs
-        for name, path in self.logs.iteritems():
+        for name, path in self.logs.items():
             node = LogNode(log_type=name, api=self.api, log_path=path)
             self.log_nodes.append(node)
 
         # systemd journals
-        for name, args in self.journals.iteritems():
+        for name, args in self.journals.items():
             node = SystemdJournalNode(
                 log_type=name, api=self.api, journalctl_args=args
             )
@@ -429,7 +278,6 @@ if __name__ == '__main__':
     watcher = LogWatcher(
         logs=logs,
         journals=journals,
-        watch_stats=True
     )
     try:
         watcher.run()

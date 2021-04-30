@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-
 from datetime import datetime
-from httplib import REQUEST_ENTITY_TOO_LARGE
-from mock import patch, Mock
+from http.client import REQUEST_ENTITY_TOO_LARGE
 from tempfile import NamedTemporaryFile
 from unittest import TestCase
+from unittest.mock import patch, Mock
 
 from ona_service.api import (
     Api,
@@ -75,7 +74,7 @@ class ApiTestCase(TestCase):
         # with everything set up, run the thing.
         time = datetime.utcnow()
         with NamedTemporaryFile() as f:
-            f.write("hee hee hee")
+            f.write(b"hee hee hee")
             f.seek(0)
             remote_path = self.api.send_file('mytype', f.name, time)
 
@@ -102,48 +101,62 @@ class ApiTestCase(TestCase):
         # mock_upload and mock_requests.request are the same call...
         mock_upload.assert_called_once_with(
             'SUPERGET', 'url!',
-            headers='headers!', data='hee hee hee', verify=True,
+            headers='headers!', data=b'hee hee hee', verify=True,
             timeout=HTTP_TIMEOUT)
         self.assertEquals(mock_requests.request.call_count, 1)
         mock_upload_response.raise_for_status.assert_called_once_with()
 
     @patch('ona_service.api.requests', autospec=True)
-    def test_send_file_suffix(self, mock_requests):
-        mock_requests.get.return_value.json.return_value = {
-            'headers': 'headers!',
-            'url': 'url!',
-            'method': 'SUPERGET',
-            'path': 'remote_path!',
-        }
+    def test_send_file_prefix_suffix(self, mock_requests):
+        prefix = '20210219'
+        suffix = 'mp3'
+        for kwargs, expected_name in [
+            ({}, self.api.ona_name),
+            ({'prefix': prefix}, '{}_{}'.format(prefix, self.api.ona_name)),
+            ({'suffix': suffix}, '{}_{}'.format(self.api.ona_name, suffix)),
+            (
+                {'prefix': prefix, 'suffix': suffix},
+                '{}_{}_{}'.format(prefix, self.api.ona_name, suffix)
+            ),
+        ]:
+            mock_requests.reset_mock()
+            mock_get = mock_requests.get
+            mock_get.return_value.json.return_value = {
+                'headers': 'headers!',
+                'url': 'url!',
+                'method': 'SUPERGET',
+                'path': 'remote_path!',
+            }
 
-        time = datetime.utcnow()
-        with NamedTemporaryFile() as f:
-            f.write("hee hee hee")
-            f.seek(0)
-            remote_path = self.api.send_file('mytype', f.name, time,
-                                             suffix='mp3')
+            with self.subTest(expected_name=expected_name):
+                time = datetime.utcnow()
+                with NamedTemporaryFile() as f:
+                    f.write(b"hee hee hee")
+                    f.seek(0)
+                    remote_path = self.api.send_file(
+                        'mytype', f.name, time, **kwargs
+                    )
 
-        self.assertEquals(remote_path, 'remote_path!')
+                self.assertEquals(remote_path, 'remote_path!')
 
-        file_url = '{base_url}/{YY}/{M}/{DD}/{T}/{name}'.format(
-            base_url='https://sensor.ext.obsrvbl.com/sign/mytype',
-            YY=time.year,
-            M=time.month,
-            DD=time.day,
-            T=time.time(),
-            name='foo_mp3',
-        )
-        mock_requests.get.assert_called_once_with(
-            file_url,
-            verify=True,
-            timeout=HTTP_TIMEOUT,
-            auth=self.auth,
-            headers={}
-        )
-        mock_requests.get.return_value.raise_for_status.\
-            assert_called_once_with()
-
-        self.assertEquals(mock_requests.request.call_count, 1)
+                file_url = '{base_url}/{YY}/{M}/{DD}/{T}/{name}'.format(
+                    base_url='https://sensor.ext.obsrvbl.com/sign/mytype',
+                    YY=time.year,
+                    M=time.month,
+                    DD=time.day,
+                    T=time.time(),
+                    name=expected_name,
+                )
+                mock_get.assert_called_once_with(
+                    file_url,
+                    verify=True,
+                    timeout=HTTP_TIMEOUT,
+                    auth=self.auth,
+                    headers={}
+                )
+                mock_raise_for_status = mock_get.return_value.raise_for_status
+                mock_raise_for_status.assert_called_once_with()
+                self.assertEquals(mock_requests.request.call_count, 1)
 
     @patch('ona_service.api.requests', autospec=True)
     def test_send_file_fail(self, mock_requests):
@@ -159,7 +172,7 @@ class ApiTestCase(TestCase):
 
         time = datetime.utcnow()
         with NamedTemporaryFile() as f:
-            f.write("hee hee hee")
+            f.write(b"hee hee hee")
             f.seek(0)
             remote_path = self.api.send_file('mytype', f.name, time)
 
@@ -186,7 +199,7 @@ class ApiTestCase(TestCase):
 
         time = datetime.utcnow()
         with NamedTemporaryFile() as f:
-            f.write("hee hee hee")
+            f.write(b"hee hee hee")
             f.seek(0)
             api.send_file('mytype', f.name, time)
 

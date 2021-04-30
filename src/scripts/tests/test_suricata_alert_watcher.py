@@ -11,18 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function
-
 from datetime import datetime
-import io
 from glob import glob
 from os import path, rename
-from shutil import rmtree
 from subprocess import CalledProcessError
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-
-from mock import call, MagicMock, patch
+from unittest.mock import call, MagicMock, patch
 
 from ona_service.suricata_alert_watcher import (
     _compress_log,
@@ -45,10 +40,10 @@ patch_path = 'ona_service.suricata_alert_watcher.{}'.format
 
 class SuricataAlertWatcherTest(TestCase):
     def setUp(self):
-        self.tempdir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
     def tearDown(self):
-        rmtree(self.tempdir)
+        self.temp_dir.cleanup()
 
     @patch(patch_path('check_call'), autospec=True)
     def test_compress_log(self, mock_check_call):
@@ -84,9 +79,9 @@ class SuricataAlertWatcherTest(TestCase):
     @patch(patch_path('get_ip'), dummy_get_ip)
     @patch(patch_path('utcoffset'), dummy_utcoffset)
     def test_upload(self):
-        file1 = self.tempdir + '/eve.json.foo.archived'
-        file2 = self.tempdir + '/eve.json.bar.archived'
-        ignored = self.tempdir + '/ignored'
+        file1 = path.join(self.temp_dir.name, 'eve.json.foo.archived')
+        file2 = path.join(self.temp_dir.name, 'eve.json.bar.archived')
+        ignored = path.join(self.temp_dir.name, 'ignored')
 
         with open(file1, 'w'):
             pass
@@ -96,7 +91,7 @@ class SuricataAlertWatcherTest(TestCase):
             pass
 
         now = datetime(2015, 3, 12)
-        watcher = SuricataAlertWatcher(log_dir=self.tempdir)
+        watcher = SuricataAlertWatcher(log_dir=self.temp_dir.name)
         watcher.api = MagicMock()
         watcher.api.send_file.return_value = 'send_destination'
         watcher._upload(now)
@@ -105,7 +100,7 @@ class SuricataAlertWatcherTest(TestCase):
         self.assertFalse(path.exists(file2))
         self.assertTrue(path.exists(ignored))
 
-        self.assertItemsEqual(watcher.api.send_file.call_args_list, [
+        self.assertCountEqual(watcher.api.send_file.call_args_list, [
             call('logs', file1, now, suffix='suricata'),
             call('logs', file2, now, suffix='suricata'),
         ])
@@ -118,14 +113,14 @@ class SuricataAlertWatcherTest(TestCase):
         self.assertEquals(len(watcher.api.send_signal.call_args_list), 2)
 
     def test_upload_compressed(self):
-        watcher = SuricataAlertWatcher(log_dir=self.tempdir)
+        watcher = SuricataAlertWatcher(log_dir=self.temp_dir.name)
         watcher.api = MagicMock()
 
         # Write some fake data
         outfile_name = '{}.12345678.archived'.format(SURICATA_LOGNAME)
-        outfile_path = path.join(self.tempdir, outfile_name)
-        with io.open(outfile_path, 'w') as outfile:
-            print(u'I am but a meer cat.', file=outfile)
+        outfile_path = path.join(self.temp_dir.name, outfile_name)
+        with open(outfile_path, 'w') as outfile:
+            print('I am but a meer cat.', file=outfile)
 
         # Make the call
         now = datetime.now()
@@ -141,13 +136,13 @@ class SuricataAlertWatcherTest(TestCase):
         self.assertEqual(watcher.api.send_signal.call_count, 1)
 
         # Ensure that directory was cleaned up
-        self.assertEqual(glob(path.join(self.tempdir, '*.*')), [])
+        self.assertEqual(glob(path.join(self.temp_dir.name, '*.*')), [])
 
     @patch(patch_path('get_ip'), dummy_get_ip)
     @patch(patch_path('utcoffset'), dummy_utcoffset)
     def test_upload_nothing(self):
         now = datetime(2015, 3, 12)
-        watcher = SuricataAlertWatcher(log_dir=self.tempdir)
+        watcher = SuricataAlertWatcher(log_dir=self.temp_dir.name)
         watcher.api = MagicMock()
         watcher.api.send_file.return_value = 'send_destination'
         watcher._upload(now)
@@ -159,7 +154,7 @@ class SuricataAlertWatcherTest(TestCase):
     @patch(patch_path('utcoffset'), dummy_utcoffset)
     @patch(patch_path('check_output'), autospec=True)
     def test_rotate_then_upload(self, mock_check_output):
-        logfile = self.tempdir + '/eve.json'
+        logfile = path.join(self.temp_dir.name, 'eve.json')
         with open(logfile, 'w'):
             pass
         after_rename = '{}.{}.archived'.format(logfile, '12345678')
@@ -168,7 +163,7 @@ class SuricataAlertWatcherTest(TestCase):
         mock_check_output.side_effect = rename(logfile, after_rename)
 
         now = datetime(2015, 3, 12)
-        watcher = SuricataAlertWatcher(log_dir=self.tempdir)
+        watcher = SuricataAlertWatcher(log_dir=self.temp_dir.name)
         watcher.api = MagicMock()
         watcher.api.send_file.return_value = 'send_destination'
 
@@ -193,17 +188,19 @@ class SuricataAlertWatcherTest(TestCase):
 
     @patch(patch_path('check_output'), autospec=True)
     def test_update_rules(self, mock_check_output):
-        watcher = SuricataAlertWatcher(log_dir=self.tempdir)
+        watcher = SuricataAlertWatcher(log_dir=self.temp_dir.name)
         watcher.api = MagicMock()
         watcher.api.get_data.return_value.iter_content.return_value = [
-            'foo', 'bar', 'oof']
+            b'foo', b'bar', b'oof'
+        ]
 
-        my_rules = '{}/some.rules'.format(self.tempdir)
+        my_rules = '{}/some.rules'.format(self.temp_dir.name)
         with patch(patch_path('SURICATA_RULE_PATH'), my_rules):
             watcher._update_rules()
 
-        with open(my_rules, 'rb') as r:
+        with open(my_rules) as r:
             contents = r.read()
+
         self.assertEquals(contents, 'foobaroof')
         mock_check_output.assert_called_once_with(
             ['sudo', '-u', 'suricata', MANAGE_SCRIPT, 'reload-config']
@@ -217,8 +214,8 @@ class SuricataAlertWatcherTest(TestCase):
         watcher = SuricataAlertWatcher()
 
         # Rules exist
-        rule_path = path.join(self.tempdir, 'downloaded.rules')
-        with open(rule_path, 'wt') as outfile:
+        rule_path = path.join(self.temp_dir.name, 'downloaded.rules')
+        with open(rule_path, 'wb') as outfile:
             outfile.write(b'rule_data\n')
 
         # 2015 was a long time ago, so it's time to update
@@ -239,7 +236,7 @@ class SuricataAlertWatcherTest(TestCase):
     ):
         watcher = SuricataAlertWatcher()
 
-        rule_path = path.join(self.tempdir, 'downloaded.rules')
+        rule_path = path.join(self.temp_dir.name, 'downloaded.rules')
 
         # 2015 is now, according to this test, so it's not time to update.
         # However, the rule file doesn't exist - so we will.
@@ -259,7 +256,9 @@ class SuricataAlertWatcherTest(TestCase):
 
         # It's time to update, but the rule directory doesn't exist.
         # So we won't.
-        rule_path = path.join(self.tempdir, 'different-dir/downloaded.rules')
+        rule_path = path.join(
+            self.temp_dir.name, 'different-dir/downloaded.rules'
+        )
         with patch(patch_path('SURICATA_RULE_PATH'), rule_path):
             now = datetime(2015, 1, 1)
             watcher.execute(now)

@@ -8,21 +8,25 @@ See [observable.net](https://observable.net) for more information about Observab
 
 The following platforms are officially supported:
 
-* [Ubuntu 16.04 and later](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb)
-* [RHEL 6 and compatible*](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_6_x86_64.rpm)
+* [Ubuntu 18.04 and later](https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb)
 * [RHEL 7 and compatible](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_7_x86_64.rpm)
 * [RHEL 8 and compatible](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RHEL_8_x86_64.rpm)
 * [Raspberry Pi with Raspbian](https://onstatic.s3.amazonaws.com/ona/master/ona-service_RaspbianJessie_armhf.deb)
 * [Docker](https://github.com/obsrvbl/ona/blob/master/images/docker/Dockerfile)
 
-To install the latest version on 18.04 (recommended for physical and virtual machine installations):
+To install the latest version on 20.04 (recommended for physical and virtual machine installations):
 
 ```
-# wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb
-# sudo apt install ./ona-service_UbuntuXenial_amd64.deb
+$ wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_UbuntuXenial_amd64.deb
+$ sudo apt install ./ona-service_UbuntuXenial_amd64.deb
 ```
 
-\* RHEL 6 and others will need `/usr/bin/python2.7` to point to a working Python 2.7 installation.
+To monitor NetFlow traffic, you'll also need to install tools from the [CERT NetSA Security Suite](https://tools.netsa.cert.org/):
+
+```
+$ wget http://onstatic.s3.amazonaws.com/netsa-pkg.deb
+$ sudo apt install ./netsa-pkg.deb
+```
 
 ## Services
 

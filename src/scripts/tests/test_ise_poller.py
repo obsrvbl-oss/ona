@@ -11,19 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
+import gzip
+import json
 import os
 
 from datetime import datetime
 from json import dumps
 from os.path import join
-from shutil import rmtree
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch, MagicMock
 
-from mock import patch, MagicMock
 from requests import Response
 
 from ona_service.ise_poller import (
@@ -34,33 +32,104 @@ from ona_service.ise_poller import (
     ENV_ISE_PASSWORD,
     ENV_ISE_SERVER_NAME,
     IsePoller,
-    OUTPUT_FIELDNAMES,
     SEND_FILE_TYPE,
     SENSORDATA_TYPE,
     TICK_DELTA,
 )
-from ona_service.utils import gunzip_bytes, utc
+from ona_service.utils import exploded_ip, utc
 
 PATCH_PATH = 'ona_service.ise_poller.{}'.format
+
+SERVER_SESSIONS = [
+    {
+        'state': 'DISCONNECTED',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'ipAddresses': ['192.0.2.0', '2001:db8::'],
+        'nasIpAddress': '192.0.2.3',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'adNormalizedUser': 'some-user\ufffd\ufffd',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'ipAddresses': ['2001:db8::', '192.0.2.0'],
+        'nasIpAddress': 'not-an-address',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'adNormalizedUser': 'some-user\ufffd\ufffd',
+        'adUserDomainName': 'some-domain\ufffd\ufffd',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'ipAddresses': 'corrupted-data',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'adNormalizedUser': '00:00:00:00:00:00',
+        'adUserDomainName': 'some-domain\ufffd\ufffd',
+    },
+]
+NORMALIZED_SESSIONS = [
+    {
+        'state': 'DISCONNECTED',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'ingestTimestamp': '2019-01-29T12:34:00+00:00',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'ingestTimestamp': '2019-01-29T12:34:00+00:00',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'ipAddresses': ['192.0.2.0', '2001:db8::'],
+        'ipAddresses_0': exploded_ip('192.0.2.0'),
+        'nasIpAddress': exploded_ip('192.0.2.3'),
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'adNormalizedUser': 'some-user\ufffd\ufffd',
+        'ingestTimestamp': '2019-01-29T12:34:00+00:00',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'ipAddresses': ['2001:db8::', '192.0.2.0'],
+        'ipAddresses_0': exploded_ip('2001:db8::'),
+        'nasIpAddress': 'not-an-address',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'adNormalizedUser': 'some-user\ufffd\ufffd',
+        'adUserDomainName': 'some-domain\ufffd\ufffd',
+        'ingestTimestamp': '2019-01-29T12:34:00+00:00',
+    },
+    {
+        'state': 'AUTHENTICATED',
+        'ipAddresses': 'corrupted-data',
+        'timestamp': '2019-01-29T12:34:01.100-06:00',
+        'adNormalizedUser': '00:00:00:00:00:00',
+        'adUserDomainName': 'some-domain\ufffd\ufffd',
+        'ingestTimestamp': '2019-01-29T12:34:00+00:00',
+    },
+]
 
 
 class IsePollerTests(TestCase):
     def setUp(self):
-        self.temp_dir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
         # Write dummy certificate and key files
-        self.client_cert = join(self.temp_dir, 'client_cert')
-        with io.open(self.client_cert, 'wt') as outfile:
+        self.client_cert = join(self.temp_dir.name, 'client_cert')
+        with open(self.client_cert, 'wt') as outfile:
             print('-----BEGIN CERTIFICATE-----', file=outfile)
             print('-----END CERTIFICATE-----', file=outfile)
 
-        self.client_key = join(self.temp_dir, 'client_key')
-        with io.open(self.client_key, 'wt') as outfile:
+        self.client_key = join(self.temp_dir.name, 'client_key')
+        with open(self.client_key, 'wt') as outfile:
             print('-----BEGIN RSA PRIVATE KEY-----', file=outfile)
             print('-----END RSA PRIVATE KEY-----', file=outfile)
 
-        self.ca_cert = join(self.temp_dir, 'ca_cert')
-        with io.open(self.ca_cert, 'wt') as outfile:
+        self.ca_cert = join(self.temp_dir.name, 'ca_cert')
+        with open(self.ca_cert, 'wt') as outfile:
             print('-----BEGIN CERTIFICATE-----', file=outfile)
             print('-----END CERTIFICATE-----', file=outfile)
 
@@ -68,7 +137,7 @@ class IsePollerTests(TestCase):
         self.expected_headers = {'Accept': 'application/json'}
 
     def tearDown(self):
-        rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir.cleanup()
 
     def _get_instance(self, **env):
         base_env = {
@@ -105,7 +174,7 @@ class IsePollerTests(TestCase):
         # Simulate wrong contents in the certificate and key files - no
         # server calls should be attempted.
         for file_path in [self.client_cert, self.client_key, self.ca_cert]:
-            with io.open(file_path, 'wb') as outfile:
+            with open(file_path, 'wb') as outfile:
                 outfile.write(b'\x80-----BEGIN NONSENSE-----\n')
                 outfile.write(b'\x80-----END NONSENSE-----\n')
 
@@ -166,7 +235,7 @@ class IsePollerTests(TestCase):
         # The server supplies configuration
         server_resp = {
             'config': {
-                'ISE_SERVER_NAME': 'localhost:8000',
+                'ISE_SERVER_NAME': 'localhost',
                 'ISE_PASSWORD': 'ona-password',
                 'ISE_NODE_NAME': 'ona-node',
                 'ISE_DATA_CLIENT_CERT': (
@@ -203,7 +272,7 @@ class IsePollerTests(TestCase):
         ):
             file_path = getattr(inst, attr)
             self.assertEqual(oct(os.stat(file_path).st_mode)[-3:], '600')
-            with open(file_path, 'rt') as f:
+            with open(file_path, newline='') as f:
                 self.assertEqual(f.read(), server_resp['config'][key])
 
     @patch(PATCH_PATH('post'), autospec=True)
@@ -220,7 +289,7 @@ class IsePollerTests(TestCase):
             )
             self.assertEqual(kwargs['verify'], self.ca_cert)
 
-            if url.startswith('https://localhost:8910/pxgrid/control'):
+            if url.startswith('https://localhost:8911/pxgrid/control'):
                 # Control requests use a static password
                 self.assertEqual(kwargs['auth'], ('ona-node', 'ona-password'))
 
@@ -255,43 +324,7 @@ class IsePollerTests(TestCase):
                 expected_input = {
                     'startTimestamp': (self.now + TICK_DELTA).isoformat()
                 }
-                output_json = {
-                    'sessions': [
-                        # Wrong state
-                        {
-                            'state': 'DISCONNECTED',
-                            'timestamp': '2019-01-29T12:34:01.100-06:00',
-                        },
-                        # No IP addresses
-                        {
-                            'state': 'AUTHENTICATED',
-                            'timestamp': '2019-01-29T12:34:01.100-06:00',
-                        },
-                        # No adUserDomainName
-                        {
-                            'state': 'AUTHENTICATED',
-                            'ipAddresses': ['192.0.2.0', '192.0.2.1'],
-                            'timestamp': '2019-01-29T12:34:01.100-06:00',
-                            'adNormalizedUser': 'some-user\ufffd\ufffd',
-                        },
-                        # Valid
-                        {
-                            'state': 'AUTHENTICATED',
-                            'ipAddresses': ['192.0.2.0', '192.0.2.1'],
-                            'timestamp': '2019-01-29T12:34:01.100-06:00',
-                            'adNormalizedUser': 'some-user\ufffd\ufffd',
-                            'adUserDomainName': u'some-domain\ufffd\ufffd',
-                        },
-                        # Valid
-                        {
-                            'state': 'AUTHENTICATED',
-                            'ipAddresses': ['192.0.2.0', '192.0.2.1'],
-                            'timestamp': '2019-01-29T12:34:01.100-06:00',
-                            'adNormalizedUser': '00:00:00:00:00:00',
-                            'adUserDomainName': u'some-domain\ufffd\ufffd',
-                        },
-                    ]
-                }
+                output_json = {'sessions': SERVER_SESSIONS}
                 self.assertEqual(kwargs['headers'], self.expected_headers)
 
             else:
@@ -306,15 +339,18 @@ class IsePollerTests(TestCase):
         # Intercept the file upload
         output = {}
 
-        def send_file(data_type, path, now, suffix=None):
+        def send_file(data_type, path, now, prefix=None, suffix=None):
             self.assertEqual(data_type, SEND_FILE_TYPE)
-            with io.open(path, 'rb') as infile:
+            datetime.strptime(prefix, '%Y-%m-%d-%H-%M-%S')
+            self.assertTrue(suffix.endswith('.jsonl.gz'))
+            with open(path, 'rb') as infile:
                 output[index] = infile.read()
 
-            return 'file:///tmp/ise_data.csv.gz'
+            return 'file:///tmp/ise_data.jsonl.gz'
 
         # Get an IsePoller instance
         inst = self._get_instance(
+            OBSRVBL_ISE_SERVER_PORT='8911',
             OBSRVBL_ISE_NODE_NAME='ona-node',
             OBSRVBL_ISE_PASSWORD='ona-password',
         )
@@ -323,17 +359,15 @@ class IsePollerTests(TestCase):
         # Do the deed
         index = 0
         inst.execute(now=self.now)
-        actual = gunzip_bytes(output[index]).splitlines()
-        expected = [
-            ','.join(OUTPUT_FIELDNAMES),
-            '1548786841,,some-user,,192.0.2.0,some-domain',
-        ]
-        self.assertEqual(actual, expected)
+
+        all_lines = gzip.decompress(output[index]).decode('utf-8').splitlines()
+        actual = [json.loads(line) for line in all_lines]
+        self.assertEqual(actual, NORMALIZED_SESSIONS)
         inst.api.send_signal.assert_called_once_with(
             data_type='sensordata',
             data={
                 'timestamp': self.now.isoformat(),
                 'data_type': SENSORDATA_TYPE,
-                'data_path': 'file:///tmp/ise_data.csv.gz',
+                'data_path': 'file:///tmp/ise_data.jsonl.gz',
             }
         )

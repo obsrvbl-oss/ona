@@ -11,42 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
 
 # python builtins
-import io
-import gzip
 import json
 import socket
 
 from calendar import timegm
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timezone
+from ipaddress import ip_address, IPv4Interface as ip_interface
 from os import devnull, makedirs
-from Queue import Queue, Empty
-from socket import error as socket_error, inet_aton, inet_ntoa
-from struct import pack, unpack
+from queue import Queue, Empty
 from subprocess import PIPE, Popen
-from tempfile import NamedTemporaryFile
 from threading import Event, Thread
 from time import mktime, sleep
 
 
-ZERO_DELTA = timedelta(0)
-
-
-class UTC(tzinfo):
-    """UTC"""
-    def utcoffset(self, dt):
-        return ZERO_DELTA
-
-    def tzname(self, dt):
-        return "UTC"
-
-    def dst(self, dt):
-        return ZERO_DELTA
-
-
-utc = UTC()
+utc = timezone.utc
 
 
 def utcnow():
@@ -81,15 +61,12 @@ def get_ip():
 
 def create_dirs(path):
     """Create the given path on the filesystem idempotently."""
-    try:
-        makedirs(path)
-    except OSError:
-        pass
+    makedirs(path, exist_ok=True)
 
 
 # CommandOutputFollower is inspired by J.F. Sebastian's method for non-blocking
 # reads from subprocess calls at http://stackoverflow.com/a/4896288/353839 .
-class CommandOutputFollower(object):
+class CommandOutputFollower:
     """
     Reads the output of commands that produce output forever (e.g. tail -f)
     without blocking.
@@ -179,7 +156,7 @@ class CommandOutputFollower(object):
         """
         Start the process and the thread that reads it.
         """
-        self.stderr_file = io.open(devnull, 'wb')
+        self.stderr_file = open(devnull, 'wb')
         self.process = Popen(
             self.command_args,
             stdout=PIPE,
@@ -197,43 +174,6 @@ class CommandOutputFollower(object):
 
     def stop(self):
         self.stop_event.set()
-
-
-def normalize_subnet(prefix, mask_length):
-    """
-    Given a string `prefix` with the first IP address in an IPv4 CIDR block,
-    and a string `mask_length` representing the length of the subnet mask for
-    that block, return a string with the CIDR representation of the block.
-    e.g. normalize_subnet('192.168.0.0', '16') => '192.168.0.0/16'
-
-    Returns None if the IP address or mask length is not valid for IPv4.
-    e.g. normalize_subnet('192.168.256.0', '16') => None
-    e.g. normalize_subnet('192.168.0.0', '33') => None
-
-    Masks off the host bits of the IP address if they are not 0.
-    e.g. normalize_subnet('192.168.100.0', '16') => '192.168.0.0/16'
-    """
-    # Validate the prefix
-    try:
-        prefix = unpack(b'!I', inet_aton(prefix))[0]
-    except socket_error:
-        return None
-
-    # Validate the length
-    try:
-        mask_length = int(mask_length)
-    except ValueError:
-        return None
-
-    if not (0 <= mask_length <= 32):
-        return None
-
-    # Apply the mask to the prefix
-    mask = ((1 << 32) - 1) ^ ((1 << (32 - mask_length)) - 1)
-    normal_prefix = inet_ntoa(pack('!I', prefix & mask))
-
-    # Return a properly-formatted string
-    return '{}/{}'.format(normal_prefix, mask_length)
 
 
 def validate_pna_networks(site_value):
@@ -262,43 +202,13 @@ def validate_pna_networks(site_value):
         return ''
 
     for item in site_items:
-        item = item.split('/')
-        if len(item) != 2:
+        try:
+            normalized_string = str(ip_interface(item).network)
+        except ValueError:
             continue
-
-        prefix, mask_length = item
-        normalized_string = normalize_subnet(prefix, mask_length)
-        if normalized_string is not None:
-            output_list.append(normalized_string)
+        output_list.append(normalized_string)
 
     return ' '.join(output_list)
-
-
-def send_observations(api, obs_type, obs_data, now, suffix=''):
-    """
-    Upload an observations file to the ON service.
-    `api` is an ON API object.
-    `obs_type` is a string with the name of the observation resource.
-    `obs_data` is an iterable of dicts with observation data.
-    `now` is a datetime object.
-    `suffix` is a string to be appended to the file name.
-    """
-    if not obs_data:
-        return
-
-    with NamedTemporaryFile() as f:
-        for obs in obs_data:
-            obs['observation_type'] = obs_type
-            obs_json = json.dumps(obs, sort_keys=True).encode('utf-8')
-            f.write(obs_json)
-            f.write(b'\n')
-
-        f.seek(0)
-        path = api.send_file('logs', f.name, now, suffix=suffix)
-
-    if path is not None:
-        data = {'path': path, 'log_type': 'observations'}
-        api.send_signal('logs', data)
 
 
 def timestamp(dt):
@@ -306,32 +216,18 @@ def timestamp(dt):
     return timegm(dt.utctimetuple())
 
 
-def gunzip_bytes(gz_bytes, *args, **kwargs):
-    with io.BytesIO(gz_bytes) as fd:
-        with gzip.GzipFile(fileobj=fd, mode='rb') as gz_fd:
-            return gz_fd.read()
-
-
-def gzip_bytes(raw_bytes, *args, **kwargs):
-    with io.BytesIO() as fd:
-        with gzip.GzipFile(fileobj=fd, mode='wb') as gz_fd:
-            gz_fd.write(raw_bytes)
-
-        return fd.getvalue()
-
-
 class persistent_dict(dict):
     def __init__(self, filename):
-        super(persistent_dict, self).__init__()
+        super().__init__()
         self.filename = filename
         self._load()
 
     def _load(self):
         self.clear()
         try:
-            with open(self.filename, 'r') as f:
+            with open(self.filename) as f:
                 self.update(json.load(f))
-        except (IOError, ValueError):
+        except (OSError, ValueError):
             pass
 
     def _save(self):
@@ -339,18 +235,24 @@ class persistent_dict(dict):
             return json.dump(self, f)
 
     def __setitem__(self, key, value):
-        res = super(persistent_dict, self).__setitem__(key, value)
+        res = super().__setitem__(key, value)
         self._save()
         return res
 
 
 def is_ip_address(x):
-    for family in (socket.AF_INET, socket.AF_INET6):
-        try:
-            socket.inet_pton(family, x)
-        except socket.error:
-            pass
-        else:
-            return True
+    try:
+        ip_address(x)
+    except ValueError:
+        return False
 
-    return False
+    return True
+
+
+def exploded_ip(ip, V4_PREFIX=b'\x00' * 12):
+    if ':' in ip:
+        packed = socket.inet_pton(socket.AF_INET6, ip)
+    else:
+        packed = V4_PREFIX + socket.inet_pton(socket.AF_INET, ip)
+
+    return packed.hex()

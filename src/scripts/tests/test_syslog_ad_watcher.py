@@ -11,21 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
+import gzip
 
 from datetime import datetime
 from os import environ
 from os.path import join
-from shutil import rmtree
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-
-from mock import MagicMock
+from unittest.mock import MagicMock
 
 from ona_service.syslog_ad_watcher import SyslogADWatcher
-from ona_service.utils import gunzip_bytes, utc
+from ona_service.utils import utc
 
 LOG_DATA_MULTILINE = (
     'obsrvbl_remote-ad|2016-05-21 06:49| May 21 06:49:34 2016\t4624\t'
@@ -92,14 +88,14 @@ LOG_DATA_ONELINE = (
 
 
 def _append_file(file_path, data):
-    with io.open(file_path, 'ab') as outfile:
-        print(data, file=outfile, end='')
+    with open(file_path, 'ab') as outfile:
+        outfile.write(data.encode())
 
 
 class SyslogADWatcherTestCase(TestCase):
     def setUp(self):
-        self.temp_dir = mkdtemp()
-        self.log_path = join(self.temp_dir, 'remote-ad.log')
+        self.temp_dir = TemporaryDirectory()
+        self.log_path = join(self.temp_dir.name, 'remote-ad.log')
         self.now = datetime(2016, 5, 21, 13, 9, 30, tzinfo=utc)
 
         # Should be ignored by RemoteADLogNode
@@ -112,13 +108,13 @@ class SyslogADWatcherTestCase(TestCase):
         self.inst.utcoffset = -(5 * 60 * 60)
 
     def tearDown(self):
-        rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir.cleanup()
 
     def test_execute_multiline(self):
         output = {}
 
         def send_file(data_type, path, now, suffix=None):
-            with io.open(path, 'rb') as infile:
+            with open(path, 'rb') as infile:
                 output[index] = infile.read()
 
         self.inst.api.send_file.side_effect = send_file
@@ -129,7 +125,7 @@ class SyslogADWatcherTestCase(TestCase):
         _append_file(self.log_path, LOG_DATA_MULTILINE)
         _append_file(self.log_path, LOG_DATA_MULTILINE)
         self.inst.execute(now=self.now)
-        actual = gunzip_bytes(output[index]).splitlines()
+        actual = gzip.decompress(output[index]).decode('utf-8').splitlines()
         expected = [
             '_time,Computer,TargetUserName,EventCode,ComputerAddress',
             '1463831340,computer.obsrvbl.local,ACCOUNT241,4624,192.168.0.100',
@@ -152,7 +148,7 @@ class SyslogADWatcherTestCase(TestCase):
         )
         _append_file(self.log_path, LOG_DATA_MULTILINE)
         self.inst.execute(now=self.now)
-        actual = gunzip_bytes(output[index]).splitlines()
+        actual = gzip.decompress(output[index]).decode('utf-8').splitlines()
         expected = [
             '_time,Computer,TargetUserName,EventCode,ComputerAddress',
             '1463831340,computer.obsrvbl.local,ACCOUNT241,4624,192.168.0.100',
@@ -164,7 +160,7 @@ class SyslogADWatcherTestCase(TestCase):
         output = {}
 
         def send_file(data_type, path, now, suffix=None):
-            with io.open(path, 'rb') as infile:
+            with open(path, 'rb') as infile:
                 output[index] = infile.read()
 
         self.inst.api.send_file.side_effect = send_file
@@ -172,7 +168,7 @@ class SyslogADWatcherTestCase(TestCase):
         index = 0
         _append_file(self.log_path, LOG_DATA_ONELINE)
         self.inst.execute(now=self.now)
-        actual = gunzip_bytes(output[0]).splitlines()
+        actual = gzip.decompress(output[0]).decode('utf-8').splitlines()
         expected = [
             '_time,Computer,TargetUserName,EventCode,ComputerAddress',
             '1482256140,wk242.obsrvbl.local,Account242,4624,192.0.2.2',

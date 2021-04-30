@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
 
 from argparse import ArgumentParser
 from collections import namedtuple
@@ -22,15 +21,13 @@ SystemInfo = namedtuple('SystemInfo', 'package_type,dependencies')
 
 REDHAT_COMMON = 'tcpdump',
 RASBPI_COMMON = 'tcpdump', 'adduser'
-UBUNTU_COMMON = 'tcpdump', 'adduser', 'python2.7', 'sudo'
+UBUNTU_COMMON = 'tcpdump', 'adduser', 'python3', 'sudo'
 
 SYSTEM_INFO = {
-    'RHEL_6':
-        SystemInfo('rpm', REDHAT_COMMON + ('python27',)),
     'RHEL_7':
-        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python', 'sudo')),
+        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python3', 'sudo')),
     'RHEL_8':
-        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python27', 'sudo')),
+        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python3', 'sudo')),
     'RaspbianJessie':
         SystemInfo('deb', RASBPI_COMMON),
     'UbuntuXenial':

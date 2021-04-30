@@ -11,10 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
-import io
 import logging
 
 from collections import defaultdict
@@ -27,8 +24,8 @@ from shutil import copy
 from subprocess import call
 
 # local
-from pusher import Pusher
-from utils import timestamp
+from ona_service.pusher import Pusher
+from ona_service.utils import timestamp
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -64,7 +61,7 @@ def get_index_filter(ranges_str):
         min_index, max_index = int(range_parts[0]), int(range_parts[1])
         if not (min_index < max_index <= 65535):
             continue
-        for i in xrange(min_index, max_index + 1):
+        for i in range(min_index, max_index + 1):
             index_filter.append(str(i))
 
     return ','.join(index_filter)
@@ -96,7 +93,7 @@ class IPFIXPusher(Pusher):
 
         self.tar_mode = 'w'
 
-        super(IPFIXPusher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def _filter_silk(self, input_path, output_path):
         command = [
@@ -219,7 +216,7 @@ class IPFIXPusher(Pusher):
         # but peridoically resets.
         # For example, byte counts might be: 100, 200, 300, 10, 110, 210...
         # We'd want to emit: 300, 210, ...
-        for key, key_flows in tuple_flows.iteritems():
+        for key, key_flows in tuple_flows.items():
             # We're guaranteed to have one row for each key; if we add a
             # dummy to the end we're guaranteed to have at least 2, so we can
             # be sure to emit the last row.
@@ -231,7 +228,7 @@ class IPFIXPusher(Pusher):
             # Examine the current row and the next row, emitting the current
             # row if the next one seems to follow a reset.
             # The dummy makes sure we emit the last row.
-            for i in xrange(len(key_flows) - 1):
+            for i in range(len(key_flows) - 1):
                 curr_bytes = int(key_flows[i]['bytes'])
                 next_bytes = int(key_flows[i + 1]['bytes'])
                 if next_bytes < curr_bytes:
@@ -271,7 +268,7 @@ class IPFIXPusher(Pusher):
         in_args = input_path, 'rt'
         out_args = output_path, 'wt'
         fieldnames = CSV_HEADER.split(',')
-        with io.open(*in_args) as infile, gz_open(*out_args) as outfile:
+        with open(*in_args) as infile, gz_open(*out_args) as outfile:
             csv_reader = DictReader(infile, fieldnames=fieldnames)
             csv_writer = DictWriter(
                 outfile, fieldnames=fieldnames, lineterminator='\n'

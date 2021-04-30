@@ -11,19 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
-
-from ConfigParser import RawConfigParser
+from configparser import RawConfigParser
 from os import getenv
 
-from flowcap_config import ENV_YAF_START_PORT, DEFAULT_YAF_START_PORT
+from ona_service.flowcap_config import (
+    DEFAULT_YAF_START_PORT,
+    ENV_YAF_START_PORT,
+)
 
 INFILE_PATH = '/opt/obsrvbl-ona/system/supervisord/ona-supervisord.base'
 OUTFILE_PATH = '/opt/obsrvbl-ona/system/supervisord/ona-supervisord.conf'
 
-PYTHON_PATH = '/usr/bin/python2.7'
+PYTHON_PATH = '/usr/bin/python3'
 LOG_PATH = '/opt/obsrvbl-ona/logs/ona_service/{}.log'
 
 DEFAULT_PARAMETERS = {
@@ -63,9 +62,6 @@ PROGRAM_COMMANDS = {
     ],
     'ona-notification-publisher': [
         PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/notification_publisher.py'
-    ],
-    'ona-ossec-alert-watcher': [
-        PYTHON_PATH, '/opt/obsrvbl-ona/ona_service/ossec_alert_watcher.py'
     ],
     'ona-pna-monitor': [
         '/opt/obsrvbl-ona/system/supervisord/ona-pna-monitor.sh'
@@ -112,7 +108,6 @@ ENABLE_FLAGS = [
     ('OBSRVBL_HOSTNAME_RESOLVER', ['ona-hostname-resolver']),
     ('OBSRVBL_NOTIFICATION_PUBLISHER', ['ona-notification-publisher']),
     ('OBSRVBL_PDNS_CAPTURER', ['ona-pdns-monitor', 'ona-pdns-pusher']),
-    ('OBSRVBL_SERVICE_OSSEC', ['ona-ossec-alert-watcher']),
     ('OBSRVBL_SERVICE_SURICATA', ['ona-suricata-alert-watcher']),
     ('OBSRVBL_LOG_WATCHER', ['ona-log-watcher']),
     ('OBSRVBL_IPFIX_CAPTURER', ['ona-ipfix-monitor', 'ona-ipfix-pusher']),
@@ -123,7 +118,7 @@ ENABLE_FLAGS = [
 ]
 
 
-class SupervisorConfig(object):
+class SupervisorConfig:
     def __init__(self, infile_path=INFILE_PATH, outfile_path=OUTFILE_PATH):
         self.infile_path = infile_path
         self.outfile_path = outfile_path
@@ -149,10 +144,10 @@ class SupervisorConfig(object):
         self.config.set(section_name, 'command', command_string)
 
         if service_name in PROGRAM_PARAMETERS:
-            for key, value in PROGRAM_PARAMETERS[service_name].iteritems():
+            for key, value in PROGRAM_PARAMETERS[service_name].items():
                 self.config.set(section_name, key, value)
         else:
-            for key, value in DEFAULT_PARAMETERS.iteritems():
+            for key, value in DEFAULT_PARAMETERS.items():
                 self.config.set(section_name, key, value)
             self.config.set(
                 section_name, 'stdout_logfile', LOG_PATH.format(service_name)
@@ -191,7 +186,7 @@ class SupervisorConfig(object):
                 self.add_program(program)
 
     def write(self):
-        with io.open(self.outfile_path, 'wb') as outfile:
+        with open(self.outfile_path, 'wt') as outfile:
             self.config.write(outfile)
 
 

@@ -11,11 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
 from argparse import ArgumentParser
 
-import system_tools
+from ona_service.installation import system_tools
 
 
 def main(system_type):

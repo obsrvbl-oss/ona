@@ -11,66 +11,50 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import unicode_literals
-import io
+import json
 import logging
 import os
-import re
 
-from csv import DictWriter
 from datetime import timedelta
-from gzip import GzipFile
+from gzip import open as gz_open
+from os import makedirs
 from os.path import join
+from secrets import token_hex
 from tempfile import gettempdir, NamedTemporaryFile
-from urlparse import urlparse
+from urllib.parse import urlparse
 
 from requests import post
 from dateutil.parser import parse as dt_parse
 
-from service import Service
-from utils import create_dirs, is_ip_address, timestamp, utcnow, utc
+from ona_service.service import Service
+from ona_service.utils import exploded_ip, is_ip_address, utc, utcnow
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SEND_FILE_TYPE = 'syslog_ad'
+SEND_FILE_TYPE = 'ise-events'
 SENSORDATA_TYPE = 'ise-events'
 
 ENV_ISE_NODE_NAME = 'OBSRVBL_ISE_NODE_NAME'
 ENV_ISE_SERVER_NAME = 'OBSRVBL_ISE_SERVER_NAME'
+ENV_ISE_SERVER_PORT = 'OBSRVBL_ISE_SERVER_PORT'
 ENV_ISE_PASSWORD = 'OBSRVBL_ISE_PASSWORD'
 ENV_ISE_CLIENT_CERT = 'OBSRVBL_ISE_CLIENT_CERT'
 ENV_ISE_CLIENT_KEY = 'OBSRVBL_ISE_CLIENT_KEY'
 ENV_ISE_CA_CERT = 'OBSRVBL_ISE_CA_CERT'
-REQUIRED_KEYS = frozenset(
-    [
-        'state',
-        'timestamp',
-        'adNormalizedUser',
-        'ipAddresses',
-        'adUserDomainName',
-    ]
-)
-OUTPUT_FIELDNAMES = [
-    '_time',
-    'Computer',
-    'TargetUserName',
-    'EventCode',
-    'ComputerAddress',
-    'ActiveDirectoryDomain',
-]
+
 POLL_SECONDS = 600
 TICK_DELTA = timedelta(microseconds=1000)
-URL_TEMPLATE = 'https://{}:8910/pxgrid/control/{}'
-MAC_ADDRESS = re.compile(r'^([0-9a-fA-F]{2}:){5}([0-9a-fA-F]{2})$')
+URL_TEMPLATE = 'https://{}:{}/pxgrid/control/{}'
 
 
 class IsePoller(Service):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('poll_seconds', POLL_SECONDS)
-        super(IsePoller, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.server_name = os.environ.get(ENV_ISE_SERVER_NAME, '')
+        self.server_port = int(os.environ.get(ENV_ISE_SERVER_PORT, '8910'))
         self.node_name = os.environ.get(ENV_ISE_NODE_NAME) or self.api.ona_name
         self.password = os.environ.get(ENV_ISE_PASSWORD, '')
         self.client_cert = os.environ.get(ENV_ISE_CLIENT_CERT, '')
@@ -84,9 +68,9 @@ class IsePoller(Service):
     def _validate_certificate(self, file_path, env_var):
         # The certificate file has to exist
         try:
-            with io.open(file_path, 'rt', errors='ignore') as infile:
+            with open(file_path, errors='ignore') as infile:
                 first_line = infile.readline()
-        except (IOError, OSError):
+        except OSError:
             logging.error('Could not open %s from %s', file_path, env_var)
             return False
 
@@ -102,9 +86,9 @@ class IsePoller(Service):
     def _validate_client_key(self):
         # The client key has to exist
         try:
-            with io.open(self.client_key, 'rt', errors='ignore') as infile:
+            with open(self.client_key, errors='ignore') as infile:
                 first_line = infile.readline()
-        except (IOError, OSError):
+        except OSError:
             logging.error(
                 'Could not open %s from %s',
                 self.client_key,
@@ -172,6 +156,7 @@ class IsePoller(Service):
         # Save the values from the response
         for key, attr in (
             ('ISE_SERVER_NAME', 'server_name'),
+            ('ISE_SERVER_PORT', 'server_port'),
             ('ISE_PASSWORD', 'password'),
             ('ISE_NODE_NAME', 'node_name'),
         ):
@@ -179,7 +164,7 @@ class IsePoller(Service):
                 setattr(self, attr, resp[key])
 
         # Write the retrieved certificated data to the temporary directory.
-        create_dirs(self.cert_dir)
+        makedirs(self.cert_dir, exist_ok=True)
         for key, attr in (
             ('ISE_DATA_CLIENT_CERT', 'client_cert'),
             ('ISE_DATA_CLIENT_KEY', 'client_key'),
@@ -210,7 +195,9 @@ class IsePoller(Service):
         return response.json()
 
     def _activate(self):
-        activate_url = URL_TEMPLATE.format(self.server_name, 'AccountActivate')
+        activate_url = URL_TEMPLATE.format(
+            self.server_name, self.server_port, 'AccountActivate'
+        )
         activate_resp = self._pxgrid_request(activate_url, {}, self.password)
         if activate_resp.get('accountState') != 'ENABLED':
             return False
@@ -218,7 +205,9 @@ class IsePoller(Service):
         return True
 
     def _lookup_service(self):
-        lookup_url = URL_TEMPLATE.format(self.server_name, 'ServiceLookup')
+        lookup_url = URL_TEMPLATE.format(
+            self.server_name, self.server_port, 'ServiceLookup'
+        )
         lookup_data = {'name': 'com.cisco.ise.session'}
         lookup_resp = self._pxgrid_request(
             lookup_url, lookup_data, self.password
@@ -230,7 +219,9 @@ class IsePoller(Service):
         return peer_node_name, base_url
 
     def _get_secret(self, peer_node_name):
-        access_url = URL_TEMPLATE.format(self.server_name, 'AccessSecret')
+        access_url = URL_TEMPLATE.format(
+            self.server_name, self.server_port, 'AccessSecret'
+        )
         access_data = {'peerNodeName': peer_node_name}
         access_resp = self._pxgrid_request(
             access_url, access_data, self.password
@@ -247,35 +238,27 @@ class IsePoller(Service):
 
         return sessions
 
-    def _normalize_item(self, item):
-        return item.encode('ascii', 'ignore').decode('ascii')
+    @staticmethod
+    def _normalize_session(session, ingest_dt):
+        if 'ipAddresses' in session:
+            try:
+                session['ipAddresses_0'] = exploded_ip(
+                    session['ipAddresses'][0]
+                )
+            except Exception:
+                pass
 
-    def _normalize_sessions(self, sessions):
-        for s in sessions:
-            if not REQUIRED_KEYS.issubset(frozenset(s.keys())):
-                continue
+        if 'nasIpAddress' in session:
+            address = session['nasIpAddress']
+            try:
+                address = exploded_ip(address)
+            except Exception:
+                pass
+            session['nasIpAddress'] = address
 
-            if s['state'] != 'AUTHENTICATED':
-                continue
+        session['ingestTimestamp'] = ingest_dt.isoformat()
 
-            if not s.get('ipAddresses', []):
-                continue
-
-            # Skip MAC addresses reported in the user field
-            user = s['adNormalizedUser']
-            if MAC_ADDRESS.match(user):
-                continue
-
-            yield {
-                '_time': timestamp(dt_parse(s['timestamp'])),
-                'Computer': None,
-                'TargetUserName': self._normalize_item(user),
-                'EventCode': None,
-                'ComputerAddress': s['ipAddresses'][0],
-                'ActiveDirectoryDomain': self._normalize_item(
-                    s['adUserDomainName']
-                ),
-            }
+        return json.dumps(session)
 
     def execute(self, now=None):
         # We use the call time to determine query parameters and for the
@@ -314,24 +297,18 @@ class IsePoller(Service):
             logging.info('No sessions since %s', self.last_poll)
             return
 
-        # Normalize the data and send it out
-        normalized_sessions = list(self._normalize_sessions(sessions))
-        if not normalized_sessions:
-            logging.info('No normalized sessions since %s', self.last_poll)
-            return
-
         with NamedTemporaryFile() as f:
-            with GzipFile(fileobj=f) as gz_f:
-                writer = DictWriter(gz_f, fieldnames=OUTPUT_FIELDNAMES)
-                writer.writeheader()
-                writer.writerows(normalized_sessions)
+            with gz_open(f, 'wt', newline='') as gz_f:
+                for line in sessions:
+                    print(self._normalize_session(line, now), file=gz_f)
             f.flush()
 
             remote_path = self.api.send_file(
                 SEND_FILE_TYPE,
                 f.name,
                 ts,
-                suffix='{:04}'.format(now.minute * 60 + now.second)
+                prefix=now.strftime('%Y-%m-%d-%H-%M-%S'),
+                suffix='{}.jsonl.gz'.format(token_hex(4))
             )
             if remote_path is not None:
                 data = {

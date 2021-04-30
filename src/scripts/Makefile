@@ -21,20 +21,24 @@ vendor:
 	touch "${PYTHONPATH}/supervisor/__init__.py"
 
 requirements: vendor
-	pip install flake8 coverage nose mock
+	python3 -m pip install -r requirements.txt
+	python3 -m pip install flake8 coverage
 
 flake8:
 	flake8 --max-complexity 10 .
 
 quicktest:
-	PYTHONPATH="${PYTHONPATH}" python -m nose --verbose --where=tests/ ${tests}
+	PYTHONPATH="${PYTHONPATH}" python3 -m unittest -v ${tests}
 
 test: requirements flake8 quicktest
 
 coverage: requirements flake8
-	PYTHONPATH="${PYTHONPATH}" coverage run -m nose --verbose --where="tests/"
+	PYTHONPATH="${PYTHONPATH}" coverage run -m unittest -v
 	coverage report
 
 clean:
 	find . -name '*.py[co]' -delete
+	find . -name '__pycache__' -delete
+	find ${PYTHONPATH} -name '*.py[co]' -delete
+	find ${PYTHONPATH} -name '__pycache__' -delete
 	rm -f .coverage

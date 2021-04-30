@@ -11,11 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
 from unittest import TestCase
-
-from mock import MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from ona_service.installation import postinst
 

@@ -11,18 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
 
 # python builtins
 from glob import iglob
 import logging
-from os import remove
+from os import makedirs, remove
 from os.path import join
 from subprocess import call
 
 # local
-from service import Service
-from utils import create_dirs
+from ona_service.service import Service
 
 
 class TcpdumpPusher(Service):
@@ -32,8 +30,8 @@ class TcpdumpPusher(Service):
     def __init__(self, *args, **kwargs):
         self.data_type = kwargs['data_type']
         self.pcap_dir = kwargs.pop('pcap_dir')
-        create_dirs(self.pcap_dir)
-        super(TcpdumpPusher, self).__init__(*args, **kwargs)
+        makedirs(self.pcap_dir, exist_ok=True)
+        super().__init__(*args, **kwargs)
 
     def compress_pcaps(self):
         """

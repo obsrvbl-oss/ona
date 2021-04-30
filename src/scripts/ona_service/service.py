@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
 import logging
 
@@ -23,15 +21,15 @@ from time import sleep
 from requests import exceptions as requests_exceptions
 
 # local
-from api import Api
-from utils import utcnow
+from ona_service.api import Api
+from ona_service.utils import utcnow
 
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 
-class Service(object):
+class Service:
     """
     Generic periodic service. Handles start/stop behavior, and scheduling of
     `execute()` every interval.

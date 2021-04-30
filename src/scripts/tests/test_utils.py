@@ -11,30 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function
-
 import time
 
 from datetime import datetime
-from json import dumps
+from ipaddress import ip_address, IPv6Address
 from os import environ, fsync, remove
-from os.path import exists, join
-from shutil import rmtree
-from tempfile import gettempdir, NamedTemporaryFile
+from tempfile import NamedTemporaryFile
 from unittest import TestCase
-
-from mock import call as MockCall, MagicMock, mock_open, patch
+from unittest.mock import patch
 
 from ona_service.utils import (
     CommandOutputFollower,
-    create_dirs,
+    exploded_ip,
     get_ip,
-    utcnow,
     utcoffset,
     validate_pna_networks,
-    send_observations,
-    gzip_bytes,
-    gunzip_bytes,
     is_ip_address,
 )
 
@@ -48,14 +39,14 @@ class CommandOutputFollowerTestCase(TestCase):
         remove(self.file_path)
 
     def _write_line(self, text):
-        with open(self.file_path, 'a') as outfile:
-            print(text, file=outfile)
+        with open(self.file_path, 'ab') as outfile:
+            outfile.write(text + b'\n')
             fsync(outfile.fileno())
 
     def test_usage(self):
         # Write two lines before we start
-        self._write_line('Hartnell')
-        self._write_line('Troughton')
+        self._write_line(b'Hartnell')
+        self._write_line(b'Troughton')
 
         with CommandOutputFollower(self.command_args) as follower:
             # The process has started, yes?
@@ -66,43 +57,29 @@ class CommandOutputFollowerTestCase(TestCase):
             self.assertIsNone(follower.read_line(1), None)
 
             # Try to read a third line. We shouldn't get anything.
-            self._write_line('Pertwee')
-            self.assertEqual(follower.read_line(1), 'Pertwee\n')
+            self._write_line(b'Pertwee')
+            self.assertEqual(follower.read_line(1), b'Pertwee\n')
 
             # Write some more lines. Can we read them?
-            self._write_line('Baker')
-            self._write_line('Davison')
-            self.assertEqual(follower.read_line(1), 'Baker\n')
-            self.assertEqual(follower.read_line(1), 'Davison\n')
+            self._write_line(b'Baker')
+            self._write_line(b'Davison')
+            self.assertEqual(follower.read_line(1), b'Baker\n')
+            self.assertEqual(follower.read_line(1), b'Davison\n')
 
         # The process has stopped, yes?
         self.assertFalse(follower.check_process())
 
 
-class CreateDirsTestCase(TestCase):
-    def setUp(self):
-        self.test_dir = join(gettempdir(), 'one', 'two', 'three')
-
-    def tearDown(self):
-        rmtree(join(gettempdir(), 'one'), ignore_errors=True)
-
-    def test_new(self):
-        self.assertFalse(exists(self.test_dir))
-        create_dirs(self.test_dir)
-        self.assertTrue(exists(self.test_dir))
-
-    def test_existing(self):
-        create_dirs(self.test_dir)
-        self.assertTrue(exists(self.test_dir))
-        create_dirs(self.test_dir)
-
-
 class GetIpTestCase(TestCase):
-    @patch('socket._socketobject.getsockname')
-    def test_returns_proper_ip(self, mock_sockname):
-        IP = '12.34.56.78'
-        mock_sockname.return_value = (IP, 8765)
-        self.assertEqual(IP, get_ip())
+    @patch('socket.socket', autospec=True)
+    def test_returns_proper_ip(self, mock_socket):
+        mock_socket.return_value.getsockname.return_value = (
+            '192.0.2.1', 49152
+        )
+        self.assertEqual('192.0.2.1', get_ip())
+        self.assertEqual(mock_socket.return_value.connect.call_count, 1)
+        self.assertEqual(mock_socket.return_value.shutdown.call_count, 1)
+        self.assertEqual(mock_socket.return_value.close.call_count, 1)
 
 
 class UTCOffset(TestCase):
@@ -185,67 +162,6 @@ class ValidatePnaNetworksTestCase(TestCase):
         self.assertEqual(actual, '')
 
 
-class SendObservationsTestCase(TestCase):
-    def test_basic(self):
-        api = MagicMock()
-        data_path = 'file:///tmp/path.ext'
-        api.send_file.return_value = data_path
-
-        now = utcnow()
-
-        m = mock_open()
-        mock_path = 'ona_service.utils.NamedTemporaryFile'
-        with patch(mock_path, m, create=True):
-            send_observations(
-                api=api,
-                obs_type='some_type_v1',
-                obs_data=[{'key': 'value'}, {'key': None}],
-                now=now,
-                suffix='some_suffix',
-            )
-
-        obs_1 = {'observation_type': 'some_type_v1', 'key': 'value'}
-        obs_2 = {'observation_type': 'some_type_v1', 'key': None}
-        m.return_value.write.assert_has_calls(
-            [
-                MockCall(dumps(obs_1, sort_keys=True).encode('utf-8')),
-                MockCall(b'\n'),
-                MockCall(dumps(obs_2, sort_keys=True).encode('utf-8')),
-                MockCall(b'\n'),
-            ]
-        )
-
-        self.assertEqual(api.send_file.call_count, 1)
-        self.assertEqual(api.send_file.call_args[0][0], 'logs')
-        self.assertEqual(api.send_file.call_args[0][2], now)
-        self.assertEqual(api.send_file.call_args[1]['suffix'], 'some_suffix')
-
-        data = {'path': data_path, 'log_type': 'observations'}
-        api.send_signal.assert_called_once_with('logs', data)
-
-    def test_empty(self):
-        api = MagicMock()
-        send_observations(api, 'some_type_v1', [], utcnow())
-        self.assertEqual(api.send_file.call_count, 0)
-        self.assertEqual(api.send_signal.call_count, 0)
-
-
-class GzipTestCase(TestCase):
-    def setUp(self):
-        self.data = b'Test data'
-        self.gz_data = (
-            b'\x1f\x8b\x08\x00M\x986W\x02\xff\x0bI-.QHI,I\x04\x00\x11,\xf9Q\t'
-            b'\x00\x00\x00'
-        )
-
-    def test_gunzip_bytes(self):
-        self.assertEqual(gunzip_bytes(self.gz_data), self.data)
-
-    def test_gzip_bytes(self):
-        gz_data = gzip_bytes(self.data)
-        self.assertEqual(gunzip_bytes(gz_data), self.data)
-
-
 class IsIPAddressTests(TestCase):
     def test_basic(self):
         for item, expected in [
@@ -259,3 +175,27 @@ class IsIPAddressTests(TestCase):
         ]:
             actual = is_ip_address(item)
             self.assertEqual(actual, expected)
+
+
+class ExplodedIPTests(TestCase):
+    def test_basic(self):
+        for item in ['192.0.2.0', '2001:db8::', '::ffff:192.168.1.1']:
+            with self.subTest(item=item):
+                actual = exploded_ip(item)
+                expected = (
+                    IPv6Address(int(ip_address(item)))
+                    .exploded
+                    .replace(':', '')
+                )
+                self.assertEqual(actual, expected)
+
+    def test_error(self):
+        for item in [
+            '192.0.2.256',
+            '2001:db8:::',
+            'localhost',
+            'example.org',
+            '192.0.2.0:443',
+        ]:
+            with self.assertRaises(OSError):
+                exploded_ip(item)

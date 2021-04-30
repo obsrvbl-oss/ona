@@ -11,13 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
 # python builtins
 from os import getenv
 
 # local
-from tcpdump_pusher import TcpdumpPusher
+from ona_service.tcpdump_pusher import TcpdumpPusher
 
 ENV_ETA_PCAP_DIR = 'OBSRVBL_ETA_PCAP_DIR'
 DEFAULT_ETA_PCAP_DIR = './logs'
@@ -31,10 +29,10 @@ class EtaPusher(TcpdumpPusher):
             'pcap_dir': getenv(ENV_ETA_PCAP_DIR, DEFAULT_ETA_PCAP_DIR),
         }
         kwargs.update(init_kwargs)
-        super(EtaPusher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def execute(self, now=None):
-        all_remote_paths = super(EtaPusher, self).execute(now=now)
+        all_remote_paths = super().execute(now=now)
 
         for remote_path in all_remote_paths:
             self.api.send_signal(

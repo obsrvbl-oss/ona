@@ -1,0 +1,240 @@
+#!/usr/bin/env python
+"""
+Get the download URL for a Ubuntu Server ISO.
+If successful:
+    - prints a URL to stdout
+    - exit status is 0
+If unsuccessful:
+    - prints a traceback to stderr
+    - exit status is non-0
+
+CLI usage examples:
+
+$ ./build_iso_helper 20.04.1 subiquity
+$ ./build_iso_helper 20.04.1 legacy
+$ ./build_iso_helper --unittests
+$ ./build_iso_helper --doctests
+
+Real results as of December 2020:
+
+>>> get_iso_url('20.04.1', subiquity=True)
+'https://releases.ubuntu.com/20.04/ubuntu-20.04.1-live-server-amd64.iso'
+
+>>> get_iso_url('20.04.1', subiquity=False)
+'https://cdimage.ubuntu.com/ubuntu-legacy-server/releases/20.04.1/release/ubuntu-20.04.1-legacy-server-amd64.iso'
+
+>>> get_iso_url('20.04.0', subiquity=True)
+'https://old-releases.ubuntu.com/releases/20.04.0/ubuntu-20.04-live-server-amd64.iso'
+
+>>> get_iso_url('16.04.7', subiquity=False)
+'https://releases.ubuntu.com/16.04/ubuntu-16.04.7-server-amd64.iso'
+
+>>> get_iso_url('18.04.5', subiquity=True)
+'https://releases.ubuntu.com/18.04/ubuntu-18.04.5-live-server-amd64.iso'
+
+>>> get_iso_url('18.04.5', subiquity=False)
+'https://cdimage.ubuntu.com/ubuntu/releases/18.04.5/release/ubuntu-18.04.5-server-amd64.iso'
+
+>>> get_iso_url('18.04.4', subiquity=False)
+'https://old-releases.ubuntu.com/releases/18.04.4/ubuntu-18.04.4-server-amd64.iso'
+
+>>> get_iso_url('20.99.0', True)
+Traceback (most recent call last):
+ValueError: no release found
+
+>>> get_iso_url('16.04.7', True)
+Traceback (most recent call last):
+ValueError: no Subiquity release for this version
+"""
+from argparse import ArgumentParser, Action, SUPPRESS
+from doctest import DocTestSuite
+from unittest import TestCase, TextTestRunner, makeSuite
+from unittest.mock import patch
+from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.error import URLError, HTTPError
+
+
+class Version:
+    def __init__(self, major, minor, patch=None):
+        self.major = major
+        self.minor = minor
+        self._original_patch = patch
+        self.patch = patch or 0
+
+    @classmethod
+    def from_str(cls, s):
+        return cls(*(int(n) for n in s.split('.')))
+
+    def __str__(self):
+        return self.short if self._original_patch is None else self.long
+
+    @property
+    def short(self):
+        return f'{self.major}.{self.minor:>02}'
+
+    @property
+    def long(self):
+        return f'{self.major}.{self.minor:>02}.{self.patch}'
+
+    @property
+    def long_if_patch(self):
+        return self.patch and self.long or self.short
+
+
+class DontFollowRedirects(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        pass
+
+
+def head_status_code(url):
+    request = Request(url, method='HEAD')
+    try:
+        response = build_opener(DontFollowRedirects).open(request)
+        return response.status
+    except HTTPError as e:
+        return e.code
+    except URLError:
+        return None
+
+
+def get_iso_url(version, subiquity: bool, arch='amd64'):
+    if isinstance(version, str):
+        v = Version.from_str(version)
+    elif isinstance(version, Version):
+        v = version
+    else:
+        raise TypeError(version)
+
+    if arch != 'amd64':
+        raise NotImplementedError('script only handles amd64 so far')
+
+    if v.major >= 20:
+        if subiquity:
+            urlpath = f'https://releases.ubuntu.com/{v.short}/'
+            isofile = f'ubuntu-{v.long_if_patch}-live-server-{arch}.iso'
+        else:
+            urlpath = (
+                'https://cdimage.ubuntu.com/ubuntu-legacy-server/releases'
+                f'/{v.long}/release/'
+            )
+            isofile = f'ubuntu-{v.long_if_patch}-legacy-server-{arch}.iso'
+    elif v.major >= 18:
+        if subiquity:
+            urlpath = f'https://releases.ubuntu.com/{v.short}/'
+            isofile = f'ubuntu-{v.long_if_patch}-live-server-{arch}.iso'
+        else:
+            urlpath = f'https://cdimage.ubuntu.com/ubuntu/releases/{v.long}/release/'
+            isofile = f'ubuntu-{v.long_if_patch}-server-{arch}.iso'
+    else:
+        if subiquity:
+            raise ValueError('no Subiquity release for this version')
+        else:
+            urlpath = f'https://releases.ubuntu.com/{v.short}/'
+            isofile = f'ubuntu-{v.long_if_patch}-server-{arch}.iso'
+
+    primary = urlpath + isofile
+    fallback1 = f'https://old-releases.ubuntu.com/releases/{v.long}/' + isofile
+    fallback2 = f'https://old-releases.ubuntu.com/releases/{v.short}/' + isofile
+    if head_status_code(primary) == 200:
+        return primary
+    if head_status_code(fallback1) == 200:
+        return fallback1
+    if head_status_code(fallback2) == 200:
+        return fallback2
+    if head_status_code('https://www.google.com') == 200:
+        raise ValueError('no release found')
+    else:
+        raise Exception('no network connectivity?')
+
+
+class Tests(TestCase):
+    def test_version(self):
+        v = Version.from_str('20.04')
+        self.assertEqual(str(v), '20.04')
+        self.assertEqual(v.short, '20.04')
+        self.assertEqual(v.long, '20.04.0')
+        self.assertEqual(v.long_if_patch, '20.04')
+
+        v = Version.from_str('20.04.0')
+        self.assertEqual(str(v), '20.04.0')
+        self.assertEqual(v.short, '20.04')
+        self.assertEqual(v.long, '20.04.0')
+        self.assertEqual(v.long_if_patch, '20.04')
+
+        v = Version.from_str('20.04.1')
+        self.assertEqual(str(v), '20.04.1')
+        self.assertEqual(v.short, '20.04')
+        self.assertEqual(v.long, '20.04.1')
+        self.assertEqual(v.long_if_patch, '20.04.1')
+
+    def test_get_iso_url(self):
+        old = 'https://old-releases.ubuntu.com/releases'
+        releases = 'https://releases.ubuntu.com'
+        cd_legacy = 'https://cdimage.ubuntu.com/ubuntu-legacy-server/releases'
+
+        def fake_head_status_code(url):
+            if url in (
+                f'{cd_legacy}/20.04.1/release/ubuntu-20.04.1-legacy-server-amd64.iso',
+                f'{releases}/20.04/ubuntu-20.04.1-live-server-amd64.iso',
+                f'{old}/20.04.0/ubuntu-20.04-live-server-amd64.iso',
+                'https://www.google.com',
+            ):
+                return 200
+            else:
+                return 999
+
+        with patch(f'{__name__}.head_status_code', fake_head_status_code):
+            self.assertEqual(
+                get_iso_url('20.04.1', True),
+                f'{releases}/20.04/ubuntu-20.04.1-live-server-amd64.iso',
+            )
+            self.assertEqual(
+                get_iso_url('20.04.1', False),
+                f'{cd_legacy}/20.04.1/release/ubuntu-20.04.1-legacy-server-amd64.iso',
+            )
+            self.assertEqual(
+                get_iso_url('20.04.0', True),
+                f'{old}/20.04.0/ubuntu-20.04-live-server-amd64.iso',
+            )
+            with self.assertRaises(ValueError):
+                get_iso_url('20.99.0', True)
+
+
+class _TestAction(Action):
+    def __init__(self, option_strings, dest, default=SUPPRESS, help=None):
+        if dest == 'unittests':
+            self._suite = makeSuite(Tests)
+        elif dest == 'doctests':
+            self._suite = DocTestSuite()
+        else:
+            raise ValueError(dest)
+        super().__init__(
+            option_strings=option_strings, dest=dest, default=default, nargs=0, help=help
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        TextTestRunner(verbosity=2).run(self._suite)
+        parser.exit()
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument('version', help='e.g. "20.04.1"')
+    parser.add_argument(
+        'installer',
+        choices=['subiquity', 'legacy'],
+        help='ISO with the newer Subiquity installer or the older legacy installer',
+    )
+    parser.add_argument('--arch', default='amd64', help='default: "%(default)s"')
+    parser.add_argument('--unittests', action=_TestAction, help='run self-tests')
+    parser.add_argument(
+        '--doctests',
+        action=_TestAction,
+        help='test that the docstring examples are up-to-date',
+    )
+    args = parser.parse_args()
+    print(get_iso_url(args.version, args.installer == 'subiquity', args.arch))
+
+
+if __name__ == '__main__':
+    main()

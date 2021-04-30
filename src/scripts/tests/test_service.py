@@ -14,8 +14,8 @@
 import signal
 
 from datetime import datetime
-from mock import Mock, patch
 from unittest import TestCase
+from unittest.mock import Mock, patch
 
 from ona_service.service import Service
 
@@ -24,7 +24,7 @@ class AwesomeAndTotallySweetService(Service):
     def __init__(self, **kwargs):
         kwargs.setdefault('data_type', 'datum')
         kwargs.setdefault('poll_seconds', 0)
-        super(AwesomeAndTotallySweetService, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.called = False
 
     def execute(self, now=None):

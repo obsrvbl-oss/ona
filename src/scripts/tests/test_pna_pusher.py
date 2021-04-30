@@ -24,7 +24,7 @@ class PnaPusherTestCase(PusherTestBase, TestCase):
         self.data_type = 'pna'
         self.inst = self._get_instance(PnaPusher)
         self.tar_read_mode = 'r:bz2'
-        super(PnaPusherTestCase, self).setUp()
+        super().setUp()
 
     def _touch_files(self):
         # Files ready for processing

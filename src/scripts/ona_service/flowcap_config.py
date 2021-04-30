@@ -11,14 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
 from collections import namedtuple
 
 import io
 import logging
 
 from collections import defaultdict
-from distutils.spawn import find_executable
+from shutil import which
 from os import environ
 from subprocess import call, CalledProcessError, check_output, STDOUT
 
@@ -38,8 +37,8 @@ DEFAULT_IPSET_UDP_CONF = '/opt/obsrvbl-ona/system/netflow-udp.ipset'
 ENV_IPSET_TCP_CONF = 'OBSRVBL_IPSET_TCP_CONF'
 DEFAULT_IPSET_TCP_CONF = '/opt/obsrvbl-ona/system/netflow-tcp.ipset'
 
-IPSET_PATH = find_executable('ipset') or '/sbin/ipset'
-IPTABLES_PATH = find_executable('iptables') or '/sbin/iptables'
+IPSET_PATH = which('ipset') or '/sbin/ipset'
+IPTABLES_PATH = which('iptables') or '/sbin/iptables'
 
 PROBE_TYPES = {'netflow-v9', 'netflow-v5', 'ipfix', 'sflow'}
 
@@ -48,7 +47,7 @@ ProbeItem = namedtuple(
 )
 
 
-class FlowcapConfig(object):
+class FlowcapConfig:
     def __init__(self):
         self.ipfix_conf = environ.get(ENV_IPFIX_CONF, DEFAULT_IPFIX_CONF)
         self.ipset_udp_conf = environ.get(
@@ -61,7 +60,7 @@ class FlowcapConfig(object):
 
     def update(self):
         # Read per-probe settings from the environment
-        for k, v in environ.iteritems():
+        for k, v in environ.items():
             if not k.startswith('OBSRVBL_IPFIX_PROBE_'):
                 continue
 
@@ -154,14 +153,19 @@ class FlowcapConfig(object):
             return outfile.getvalue()
 
     def write(self):
-        with io.open(self.ipfix_conf, 'wt') as outfile:
+        with open(self.ipfix_conf, 'wt') as outfile:
             outfile.write(self.get_sensor_conf())
 
     def _should_add(self, rule_args):
         check_args = ['sudo', '-n', IPTABLES_PATH, '-C']
         # Check for the existence of the rule
         try:
-            check_output(check_args + rule_args, stderr=STDOUT)
+            check_output(
+                check_args + rule_args,
+                stderr=STDOUT,
+                encoding='utf-8',
+                errors='ignore'
+            )
         # If we get an error saying it doesn't exist, we can add it
         except CalledProcessError as e:
             if (e.returncode == 1) and ('iptables: Bad rule' in e.output):
@@ -187,7 +191,7 @@ class FlowcapConfig(object):
             set_name = 'netflow-{}'.format(protocol)
 
             # Write out the rules
-            with io.open(file_path, 'wt') as outfile:
+            with open(file_path, 'wt') as outfile:
                 line = 'create {} bitmap:port range 1024-65535'.format(
                     set_name
                 )

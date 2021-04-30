@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -x
 
 #  Copyright 2015 Observable Networks
 #
@@ -21,12 +21,17 @@
 #    wrong.
 #
 
-RELEASE="${RELEASE:-18.04.5}"
+RELEASE="${RELEASE:-20.04.1}"
 ARCH="${ARCH:-amd64}"
+VARIANT="${VARIANT:-legacy}"
 
-UBUNTU="http://cdimage.ubuntu.com/ubuntu/releases"
 
 DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
+
+fatal() {
+    echo "$@" >&2
+    exit 1
+}
 
 while getopts "f:a:r:" opt ; do
     case $opt in
@@ -36,36 +41,38 @@ while getopts "f:a:r:" opt ; do
            ;;
         r) RELEASE="$OPTARG"
            ;;
-        ?) echo "invalid argument"
+        ?) fatal "invalid argument"
            ;;
     esac
 done
 
 ubuntu_name="ubuntu-${RELEASE}-server-${ARCH}.iso"
 ona_name="ona-${RELEASE}-server-${ARCH}.iso"
-ubuntu_url="${url:-${UBUNTU}/${RELEASE}/release/${ubuntu_name}}"
+ubuntu_url="${url:-$($DIR/build_iso_helper $RELEASE $VARIANT)}"
+test -n "$ubuntu_url" || fatal "failed getting Ubuntu ISO download URL"
 ona_service_url="https://s3.amazonaws.com/onstatic/ona/master/ona-service_UbuntuXenial_amd64.deb"
-netsa_pkg_url="https://onstatic.s3.amazonaws.com/netsa-pkg.deb"
+netsa_pkg_url="http://onstatic.s3.amazonaws.com/netsa-pkg.deb"
 
 shift $(($OPTIND-1))
 
 test $EUID -ne 0 && sudo="sudo"
-which mkisofs || (echo "missing mkisofs: $sudo apt-get install genisoimage" && false)
-which isohybrid || (echo "missing isohybrid: $sudo apt-get install syslinux-utils" && false)
+which mkisofs 1> /dev/null || fatal "missing mkisofs: $sudo apt-get install genisoimage"
+which isohybrid 1> /dev/null || fatal "missing isohybrid: $sudo apt-get install syslinux-utils"
 
-mkdir "$DIR"/working
-test -f ${ubuntu_name} && cp ${ubuntu_name} working && echo "using local ${ubuntu_name}" || echo "downloading ${ubuntu_name}"
-pushd "$DIR"/working
-  test -f ${ubuntu_name} || curl -L -o ${ubuntu_name} "${ubuntu_url}"
+mkdir "$DIR"/working || fatal
+(
+  set -e
+  cd "$DIR"/working
+  curl -L -o ${ubuntu_name} "${ubuntu_url}"
   curl -L -o netsa-pkg.deb "${netsa_pkg_url}"
   curl -L -o ona-service.deb "${ona_service_url}"
   mkdir cdrom local
-  $sudo mount -o loop "${ubuntu_name}" cdrom
+  $sudo mount -o loop --read-only "${ubuntu_name}" cdrom
   rsync -av --quiet cdrom/ local
   $sudo cp ../preseed/* local/preseed/
   $sudo cp -r ../ona local
-  $sudo cp -r netsa-pkg.deb local/ona/netsa-pkg.deb
-  $sudo cp -r ona-service.deb local/ona/ona-service.deb
+  $sudo cp netsa-pkg.deb local/ona/netsa-pkg.deb
+  $sudo cp ona-service.deb local/ona/ona-service.deb
   $sudo cp ../isolinux/txt.cfg local/isolinux/txt.cfg
   $sudo cp ../isolinux/grub.cfg local/boot/grub/grub.cfg
   $sudo mkisofs -quiet -r -V "SWC Sensor Install CD" \
@@ -78,5 +85,5 @@ pushd "$DIR"/working
   $sudo umount cdrom
   $sudo chown $USER:$USER "../${ona_name}"
   isohybrid "../${ona_name}"
-popd
+)
 $sudo rm -rf "$DIR"/working

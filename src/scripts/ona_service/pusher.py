@@ -11,23 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
 # python builtins
 import logging
 
 from collections import defaultdict
 from datetime import datetime, timedelta
 from glob import iglob
-from os import remove
+from os import makedirs, remove
 from os.path import basename, getsize, join
 from tarfile import open as tar_open
 from tempfile import gettempdir
 
 
 # local
-from service import Service
-from utils import create_dirs, utc
+from ona_service.service import Service
+from ona_service.utils import utc
 
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -52,7 +50,7 @@ class Pusher(Service):
             prefix_len: length of file prefix to determine bounds (10 minutes)
             input_dir: path to search for files
         """
-        super(Pusher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.data_type = kwargs.pop('data_type')
 
@@ -116,10 +114,10 @@ class Pusher(Service):
         representing 10-minute bins and whose values are lists of files,
         create one archive per completed bin and then delete the files.
         """
-        create_dirs(self.output_dir)
+        makedirs(self.output_dir, exist_ok=True)
 
         # Don't touch the most recent 10-minute bin; it may still be active
-        file_bins = sorted(D_archive.iterkeys())[:-1]
+        file_bins = sorted(D_archive.keys())[:-1]
         for key in file_bins:
             file_list = D_archive[key]
 
@@ -150,13 +148,13 @@ class Pusher(Service):
             for file_path in file_list:
                 try:
                     tarball.add(file_path, arcname=basename(file_path))
-                except (IOError, OSError):
+                except OSError:
                     logging.warning('Could not add %s', file_path)
 
     def _remove_file(self, file_path):
         try:
             remove(file_path)
-        except (IOError, OSError):
+        except OSError:
             logging.warning('Could not remove {}.'.format(file_path))
 
     def _send_archives(self, now):
@@ -213,7 +211,7 @@ class Pusher(Service):
 
         # Aggregate the file paths into 10-minute bins
         D_archive = self._get_file_bins()
-        file_count = sum(len(v) for v in D_archive.itervalues())
+        file_count = sum(len(v) for v in D_archive.values())
         logging.info('Found %s files', file_count)
 
         # Create archives of the input files and then remove the originals

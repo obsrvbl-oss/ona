@@ -11,16 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
-from io import open
 from os.path import exists, join
-from shutil import rmtree
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import call as MockCall, mock_open, patch
 from uuid import uuid4
-
-from mock import call as MockCall, mock_open, patch
 
 from ona_service.installation import system_tools
 
@@ -30,10 +25,10 @@ PATCH_PATH = 'ona_service.installation.system_tools.{}'
 class BaseSystemTestCase(TestCase):
     def setUp(self):
         self.base_system = system_tools.BaseSystem()
-        self.temp_dir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
     def tearDown(self):
-        rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir.cleanup()
 
     def test_get_users(self):
         read_data = 'one:x\ntwo:y\nthree:z'
@@ -95,11 +90,11 @@ class BaseSystemTestCase(TestCase):
     def test_set_ona_name_default(self, mock_node):
         # The hostname is something we set, so we don't need to make one up.
         mock_node.return_value = 'ona-0a1b2c'
-        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir):
+        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir.name):
             self.base_system.set_ona_name()
 
         # No configuration file should be written.
-        config_local_path = join(self.temp_dir, 'config.local')
+        config_local_path = join(self.temp_dir.name, 'config.local')
         self.assertFalse(exists(config_local_path))
 
     @patch(PATCH_PATH.format('uuid4'), autospec=True)
@@ -113,16 +108,16 @@ class BaseSystemTestCase(TestCase):
         mock_uuid4.return_value = token
 
         # Touch the config.local file
-        config_local_path = join(self.temp_dir, 'config.local')
+        config_local_path = join(self.temp_dir.name, 'config.local')
         with open(config_local_path, 'wt'):
             pass
 
         # Set the sensor name
-        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir):
+        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir.name):
             self.base_system.set_ona_name()
 
         # Read back the configuration file
-        with open(config_local_path, 'rt') as infile:
+        with open(config_local_path) as infile:
             actual = infile.read()
         sensor_name = system_tools.ONA_NAME_PREFIX + str(token)[:6]
         expected = 'OBSRVBL_ONA_NAME="{}"\n'.format(sensor_name)
@@ -137,16 +132,16 @@ class BaseSystemTestCase(TestCase):
         sensor_name = system_tools.ONA_NAME_PREFIX + 'something'
 
         # Touch the config.local file
-        config_local_path = join(self.temp_dir, 'config.local')
+        config_local_path = join(self.temp_dir.name, 'config.local')
         with open(config_local_path, 'wt') as outfile:
             print('OBSRVBL_ONA_NAME="{}"'.format(sensor_name), file=outfile)
 
         # Set the sensor name
-        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir):
+        with patch(PATCH_PATH.format('OBSRVBL_ROOT'), self.temp_dir.name):
             self.base_system.set_ona_name()
 
         # Read back the configuration file
-        with open(config_local_path, 'rt') as infile:
+        with open(config_local_path) as infile:
             actual = infile.read()
         expected = 'OBSRVBL_ONA_NAME="{}"\n'.format(sensor_name)
         self.assertEqual(actual, expected)
@@ -224,121 +219,6 @@ class SystemdMixinTestCase(TestCase):
         actual = self.systemd_system.stop_service(service_name, instance)
         expected = 241
         self.assertEqual(actual, expected)
-
-
-class UpstartTestCase(TestCase):
-    def setUp(self):
-        # Create a class instance with the needed paths defined
-        self.upstart_startup_dir = '/tmp/etc/init'
-
-        class UpstartSystem(system_tools.UpstartMixin):
-            upstart_startup_dir = self.upstart_startup_dir
-
-        self.upstart_system = UpstartSystem()
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    @patch(PATCH_PATH.format('copy'), autospec=True)
-    @patch(PATCH_PATH.format('iglob'), autospec=True)
-    def test_install_services(self, mock_iglob, mock_copy, mock_call):
-        def _src(service):
-            return join(system_tools.OBSRVBL_ROOT, 'system/upstart', service)
-
-        def _dst(service):
-            return join(self.upstart_startup_dir, service)
-
-        services = ['ona-test-service.conf', 'obsrvbl-ona.conf']
-        mock_iglob.return_value = [_src(x) for x in services]
-
-        self.upstart_system.install_services()
-
-        # Make sure the right files were copied
-        actual = mock_copy.call_args_list
-        expected = [MockCall(_src(x), _dst(x)) for x in services]
-        self.assertEqual(actual, expected)
-
-        mock_call.assert_called_once_with(
-            'initctl reload-configuration'.split()
-        )
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    def test_start_service(self, mock_call):
-        service_name = 'ona-test-service'
-        instance = ('key', 'value')
-
-        # No instance specified
-        mock_call.return_value = 0
-        self.upstart_system.start_service(service_name)
-        actual = ' '.join(mock_call.call_args[0][0])
-        expected = 'sudo initctl start ona-test-service'
-        self.assertEqual(actual, expected)
-
-        # Instance tuple is specified
-        mock_call.return_value = 0
-        self.upstart_system.start_service(service_name, instance)
-        actual = ' '.join(mock_call.call_args[0][0])
-        expected = 'sudo initctl start ona-test-service key=value'
-        self.assertEqual(actual, expected)
-
-        # Service failed to start
-        mock_call.return_value = 1
-        with self.assertRaises(RuntimeError):
-            self.upstart_system.start_service(service_name, instance)
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    def test_stop_service(self, mock_call):
-        service_name = 'ona-test-service'
-        instance = ('key', 'value')
-
-        # No instance specified
-        self.upstart_system.stop_service(service_name)
-        actual = ' '.join(mock_call.call_args[0][0])
-        expected = 'sudo initctl stop ona-test-service'
-        self.assertEqual(actual, expected)
-
-        # Instance tuple is specified
-        self.upstart_system.stop_service(service_name, instance)
-        actual = ' '.join(mock_call.call_args[0][0])
-        expected = 'sudo initctl stop ona-test-service key=value'
-        self.assertEqual(actual, expected)
-
-        # Check return code
-        mock_call.return_value = 241
-        actual = self.upstart_system.stop_service(service_name, instance)
-        expected = 241
-        self.assertEqual(actual, expected)
-
-
-class BusyBoxMixinTestCase(TestCase):
-    def setUp(self):
-        self.busy_box = system_tools.BusyBoxMixin()
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    @patch(PATCH_PATH.format('BusyBoxMixin.get_users'), autospec=True)
-    def test_add_user(self, mock_get_users, mock_call):
-        user_name = system_tools.OBSRVBL_USER
-        # Try an already-existing user -> no calls
-        mock_get_users.return_value = {user_name, 'pcapaldi'}
-        self.busy_box.add_user()
-        self.assertEqual(mock_call.call_count, 0)
-
-        # No existing users -> add group and user
-        mock_get_users.return_value = {'dtennant', 'msmith', 'pcapaldi'}
-        self.busy_box.add_user()
-
-        addgroup_args = 'addgroup -S {}'.format(user_name).split(' ')
-        adduser_args = (
-            'adduser -s /bin/false -G {0} -S -D -H {0}'.format(user_name)
-        ).split(' ')
-        expected_calls = [MockCall(addgroup_args), MockCall(adduser_args)]
-        mock_call.assert_has_calls(expected_calls)
-
-    @patch(PATCH_PATH.format('call'), autospec=True)
-    def test_set_user_group(self, mock_call):
-        self.busy_box.set_user_group()
-        expected_args = (
-            'addgroup {} adm'.format(system_tools.OBSRVBL_USER)
-        ).split()
-        mock_call.assert_called_once_with(expected_args)
 
 
 class DebianMixinTestCase(TestCase):

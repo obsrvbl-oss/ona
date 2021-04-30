@@ -11,19 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
-
 from datetime import datetime
 from os import listdir
 from os.path import exists, join
 from shutil import rmtree
 from unittest import TestCase
-
-from mock import call, MagicMock, patch
+from unittest.mock import call, MagicMock, patch
 
 from ona_service.pdns_pusher import PdnsPusher
+
 PATCH_PATH = 'ona_service.pdns_pusher.{}'
 
 
@@ -42,7 +38,7 @@ class PdnsPusherTestCase(TestCase):
         # Touch some pcap files
         for n in (1, 2, 3):
             file_path = join(self.inst.pcap_dir, 'pdns_{}.pcap'.format(n))
-            with io.open(file_path, 'wb'):
+            with open(file_path, 'wb'):
                 pass
 
         # Before compression - nothing should be compressed
@@ -60,7 +56,7 @@ class PdnsPusherTestCase(TestCase):
         # Touch some pcap.gz files
         for n in (1, 2):
             file_path = join(self.inst.pcap_dir, 'pdns_{}.pcap.gz'.format(n))
-            with io.open(file_path, 'wb'):
+            with open(file_path, 'wb'):
                 pass
 
         # Before pushing - should have all files available

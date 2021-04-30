@@ -11,14 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
-import io
 import logging
 import platform
 
-from httplib import REQUEST_ENTITY_TOO_LARGE
+from http.client import REQUEST_ENTITY_TOO_LARGE
 from os import getenv
 
 # third-party
@@ -70,7 +67,7 @@ retry_kwargs = {
 }
 
 
-class Api(object):
+class Api:
     """
     Handles communications with Observable Networks.
     Contains functions to send data, signal that data is ready for processing,
@@ -99,7 +96,7 @@ class Api(object):
             self.sensor_ext_only = False
 
     @retry(**retry_kwargs)
-    def send_file(self, data_type, path, now, suffix=None):
+    def send_file(self, data_type, path, now, prefix=None, suffix=None):
         """
         Send a file to the ON service.
 
@@ -108,10 +105,8 @@ class Api(object):
             path: local file path.
             now: the time period that corresponds to the file.
         """
-        if suffix:
-            name = '{}_{}'.format(self.ona_name, suffix)
-        else:
-            name = self.ona_name
+        name_parts = [prefix, self.ona_name, suffix]
+        name = '_'.join(part for part in name_parts if part)
         url = '{server}/sign/{type}/{year}/{month}/{day}/{time}/{name}'
         url = url.format(
             server=self.proxy_uri, type=data_type, year=now.year,
@@ -139,7 +134,7 @@ class Api(object):
                 'Parameters missing from response'
             )
 
-        with io.open(path, mode='rb') as data:
+        with open(path, mode='rb') as data:
             logging.info('Sending file: {} {}'.format(method, url))
             resp = requests.request(
                 method,

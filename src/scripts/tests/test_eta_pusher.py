@@ -11,17 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
-
 from datetime import datetime
 from os import listdir
 from os.path import join
 from shutil import rmtree
 from unittest import TestCase
-
-from mock import call as MockCall, MagicMock
+from unittest.mock import call as MockCall, MagicMock
 
 from ona_service.eta_pusher import EtaPusher
 
@@ -41,7 +36,7 @@ class EtaPusherTestCase(TestCase):
         # Touch some pcap files
         for n in (1, 2, 3):
             file_path = join(self.inst.pcap_dir, 'logs_{}.pcap'.format(n))
-            with io.open(file_path, 'wb'):
+            with open(file_path, 'wb'):
                 pass
 
         now = datetime(2018, 4, 16, 14, 9, 33)

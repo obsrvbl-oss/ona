@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
 import json
 import logging
@@ -23,7 +21,7 @@ from tempfile import NamedTemporaryFile
 from time import sleep
 
 # local
-from service import Service
+from ona_service.service import Service
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -43,7 +41,7 @@ def gethostbyaddr(ip):
     host = None
     try:
         host = socket.gethostbyaddr(ip)[0]
-    except socket.error:
+    except OSError:
         pass
     return host
 
@@ -56,7 +54,9 @@ def nmblookup(ip, timeout_sec=1):
     host = None
     try:
         output = subprocess.check_output(
-            ['timeout', '{}s'.format(timeout_sec), 'nmblookup', '-A', ip]
+            ['timeout', '{}s'.format(timeout_sec), 'nmblookup', '-A', ip],
+            encoding='utf-8',
+            errors='ignore'
         )
     except subprocess.CalledProcessError:
         pass
@@ -102,7 +102,7 @@ class HostnameResolver(Service):
         kwargs.update({
             'poll_seconds': UPDATE_INTERVAL_SECONDS,
         })
-        super(HostnameResolver, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.resolvers = []
         if os.environ.get(ENV_HOSTNAME_NETBIOS, 'false') == 'true':
@@ -121,7 +121,7 @@ class HostnameResolver(Service):
 
     def _update_host_names(self, resolved, now):
         with NamedTemporaryFile() as f:
-            f.write(json.dumps(resolved))
+            f.write(json.dumps(resolved).encode('utf-8'))
             f.seek(0)
             path = self.api.send_file(DATA_TYPE, f.name, now, suffix='hosts')
             if path is not None:

@@ -11,17 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
-
 from os.path import join
-from shutil import rmtree
 from subprocess import CalledProcessError, STDOUT
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-
-from mock import patch
+from unittest.mock import patch
 
 from ona_service.flowcap_config import (
     ENV_IPFIX_CONF,
@@ -35,10 +29,10 @@ from ona_service.flowcap_config import (
 
 class FlowcapConfigTestCase(TestCase):
     def setUp(self):
-        self.temp_dir = mkdtemp()
-        self.ipfix_conf = join(self.temp_dir, 'sensor.conf')
-        self.ipset_udp_conf = join(self.temp_dir, 'netflow-udp.ipset')
-        self.ipset_tcp_conf = join(self.temp_dir, 'netflow-tcp.ipset')
+        self.temp_dir = TemporaryDirectory()
+        self.ipfix_conf = join(self.temp_dir.name, 'sensor.conf')
+        self.ipset_udp_conf = join(self.temp_dir.name, 'netflow-udp.ipset')
+        self.ipset_tcp_conf = join(self.temp_dir.name, 'netflow-tcp.ipset')
 
         environ = {
             ENV_IPFIX_CONF: self.ipfix_conf,
@@ -49,7 +43,7 @@ class FlowcapConfigTestCase(TestCase):
             self.flowcap_config = FlowcapConfig()
 
     def tearDown(self):
-        rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir.cleanup()
 
     def test_basic(self):
         environ = {
@@ -84,7 +78,7 @@ class FlowcapConfigTestCase(TestCase):
             self.flowcap_config.update()
             self.flowcap_config.write()
 
-        with io.open(self.ipfix_conf, 'rt') as infile:
+        with open(self.ipfix_conf) as infile:
             actual = infile.read()
 
         expected = (
@@ -115,7 +109,7 @@ class FlowcapConfigTestCase(TestCase):
             self.flowcap_config.update()
             self.flowcap_config.write()
 
-        with io.open(self.ipfix_conf, 'rt') as infile:
+        with open(self.ipfix_conf) as infile:
             actual = infile.read()
 
         expected = (
@@ -190,7 +184,7 @@ class FlowcapConfigTestCase(TestCase):
             # We need to check stderr to see if rules weren't there
             self.assertEqual(
                 mock_check_output.call_args[1],
-                {'stderr': STDOUT},
+                {'stderr': STDOUT, 'encoding': 'utf-8', 'errors': 'ignore'},
             )
 
             mock_check_output.reset_mock()
@@ -220,7 +214,7 @@ class FlowcapConfigTestCase(TestCase):
             self.flowcap_config.configure_iptables()
 
         # Check configuration files
-        with io.open(self.ipset_udp_conf, 'rt') as infile:
+        with open(self.ipset_udp_conf) as infile:
             actual = infile.read().splitlines()
             expected = [
                 'create netflow-udp bitmap:port range 1024-65535',
@@ -228,7 +222,7 @@ class FlowcapConfigTestCase(TestCase):
             ]
             self.assertEqual(actual, expected)
 
-        with io.open(self.ipset_tcp_conf, 'rt') as infile:
+        with open(self.ipset_tcp_conf) as infile:
             actual = infile.read().splitlines()
             expected = [
                 'create netflow-tcp bitmap:port range 1024-65535',
@@ -279,7 +273,7 @@ class FlowcapConfigTestCase(TestCase):
             self.flowcap_config.configure_iptables()
 
         # Check configuration files
-        with io.open(self.ipset_udp_conf, 'rt') as infile:
+        with open(self.ipset_udp_conf) as infile:
             actual = infile.read().splitlines()
             expected = [
                 'create netflow-udp bitmap:port range 1024-65535',
@@ -287,7 +281,7 @@ class FlowcapConfigTestCase(TestCase):
             ]
             self.assertEqual(actual, expected)
 
-        with io.open(self.ipset_tcp_conf, 'rt') as infile:
+        with open(self.ipset_tcp_conf) as infile:
             actual = infile.read().splitlines()
             expected = [
                 'create netflow-tcp bitmap:port range 1024-65535',

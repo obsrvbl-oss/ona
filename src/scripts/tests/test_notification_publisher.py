@@ -11,19 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
 import socket
 
 from binascii import unhexlify
 from datetime import datetime
 from json import dumps
 from os.path import join
-from shutil import rmtree
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from time import time
 from unittest import TestCase
+from unittest.mock import call, patch, MagicMock
 
-from mock import call, patch, MagicMock
 from requests import Response
 
 from ona_service.notification_publisher import (
@@ -44,14 +42,14 @@ RESPONSE_OBJECTS = [
 
 class NotificationPublisherTests(TestCase):
     def setUp(self):
-        self.temp_dir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
     def tearDown(self):
-        rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir.cleanup()
 
     def _get_instance(self, **environment):
         with patch.dict(PATCH_PATH('os_environ'), environment):
-            state_file_path = join(self.temp_dir, STATE_FILE)
+            state_file_path = join(self.temp_dir.name, STATE_FILE)
             with patch(PATCH_PATH('STATE_FILE'), state_file_path):
                 inst = NotificationPublisher()
                 inst.api = MagicMock(inst.api)
@@ -73,7 +71,9 @@ class NotificationPublisherTests(TestCase):
 
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        response._content = (
+            dumps({'objects': RESPONSE_OBJECTS}).encode('utf-8')
+        )
         inst.api.get_data.return_value = response
 
         params = {'time__gt': '2018-09-28T00:00:00+00:00'}
@@ -104,7 +104,7 @@ class NotificationPublisherTests(TestCase):
         data = {
             'error': 'What were you trying to do?'
         }
-        response._content = dumps(data)
+        response._content = dumps(data).encode('utf-8')
         inst.api.get_data.return_value = response
 
         params = {'time__gt': '2018-09-28T00:00:00+00:00'}
@@ -162,7 +162,9 @@ class NotificationPublisherTests(TestCase):
         # Response data
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        response._content = (
+            dumps({'objects': RESPONSE_OBJECTS}).encode('utf-8')
+        )
 
         inst = self._get_instance()
         inst.api.get_data.return_value = response
@@ -188,7 +190,7 @@ class NotificationPublisherTests(TestCase):
         # Empty response data - no publish attempts should happen
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': []})
+        response._content = dumps({'objects': []}).encode('utf-8')
 
         inst = self._get_instance()
         inst.api.get_data.return_value = response
@@ -214,7 +216,9 @@ class NotificationPublisherTests(TestCase):
         # Response data
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        response._content = (
+            dumps({'objects': RESPONSE_OBJECTS}).encode('utf-8')
+        )
 
         environment = {
             'OBSRVBL_SYSLOG_ENABLED': 'true',
@@ -234,11 +238,14 @@ class NotificationPublisherTests(TestCase):
             sock.close()
 
         for msg, obj in zip(messages, RESPONSE_OBJECTS):
-            dt, hostname, service, level, payload = msg.split(' ', 4)
-            datetime.strptime(dt, '<131>%Y-%m-%dT%H:%M:%S.%f+00:00')
-            self.assertEqual(service, 'OBSRVBL')
-            self.assertEqual(level, '[local0.ERROR]')
-            self.assertEqual(payload, '{}\x00'.format(dumps(obj)))
+            dt, hostname, service, level, payload = msg.split(b' ', 4)
+            datetime.strptime(
+                dt.decode('utf-8'), '<131>%Y-%m-%dT%H:%M:%S.%f+00:00'
+            )
+            self.assertEqual(service, b'OBSRVBL')
+            self.assertEqual(level, b'[local0.ERROR]')
+            json_obj = dumps(obj).encode('utf-8')
+            self.assertEqual(payload, json_obj + b'\x00')
 
     def test_execute_syslog_tcp(self):
         # TCP server socket
@@ -252,7 +259,9 @@ class NotificationPublisherTests(TestCase):
         # Send the messages
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        response._content = (
+            dumps({'objects': RESPONSE_OBJECTS}).encode('utf-8')
+        )
 
         environment = {
             'OBSRVBL_SYSLOG_ENABLED': 'true',
@@ -276,10 +285,12 @@ class NotificationPublisherTests(TestCase):
         messages = data.split(b'\x00')
         self.assertTrue(messages)
         for msg, obj in zip(messages, RESPONSE_OBJECTS):
-            dt, hostname, service, level, payload = msg.split(' ', 4)
-            datetime.strptime(dt, '<131>%Y-%m-%dT%H:%M:%S.%f+00:00')
-            self.assertEqual(service, 'OBSRVBL')
-            self.assertEqual(level, '[local0.ERROR]')
+            dt, hostname, service, level, payload = msg.split(b' ', 4)
+            datetime.strptime(
+                dt.decode('utf-8'), '<131>%Y-%m-%dT%H:%M:%S.%f+00:00'
+            )
+            self.assertEqual(service, b'OBSRVBL')
+            self.assertEqual(level, b'[local0.ERROR]')
 
     def test_execute_snmp(self):
         # Enable SNMP and listen for the UDP packets locally
@@ -288,7 +299,9 @@ class NotificationPublisherTests(TestCase):
         # Response data
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        response._content = (
+            dumps({'objects': RESPONSE_OBJECTS}).encode('utf-8')
+        )
 
         environment = {
             'OBSRVBL_SNMP_ENABLED': 'true',
@@ -310,7 +323,7 @@ class NotificationPublisherTests(TestCase):
 
         for msg, obj in zip(messages, RESPONSE_OBJECTS):
             # SNMPv2 is 0x01, of course
-            self.assertEqual('\x01', msg[4])
+            self.assertEqual(1, msg[4])
             # Community string
             self.assertIn(b'yolo', msg)
             # OID should be included twice - once to say it's coming, once
@@ -318,7 +331,7 @@ class NotificationPublisherTests(TestCase):
             encoded_oid = unhexlify('2b060104019a2f0264')
             self.assertTrue(msg.count(encoded_oid), 2)
             # Encoded message should appear
-            self.assertIn(dumps(obj), msg)
+            self.assertIn(dumps(obj).encode('utf-8'), msg)
 
     def test_execute_snmpv3(self):
         # Enable SNMPv3 and listen for the UDP packets locally
@@ -327,7 +340,9 @@ class NotificationPublisherTests(TestCase):
         # Response data
         response = Response()
         response.status_code = 200
-        response._content = dumps({'objects': RESPONSE_OBJECTS})
+        response._content = (
+            dumps({'objects': RESPONSE_OBJECTS}).encode('utf-8')
+        )
 
         environment = {
             'OBSRVBL_SNMP_ENABLED': 'true',
@@ -352,7 +367,7 @@ class NotificationPublisherTests(TestCase):
 
         for msg, obj in zip(messages, RESPONSE_OBJECTS):
             # SNMPv3 is 0x03, which does make sense
-            self.assertEqual('\x03', msg[5])
+            self.assertEqual(3, msg[5])
             # User is in the message
             self.assertIn(b'nolo', msg)
             # OID should be included twice - once to say it's coming, once
@@ -360,4 +375,4 @@ class NotificationPublisherTests(TestCase):
             encoded_oid = unhexlify('2b060104019a2f0264')
             self.assertTrue(msg.count(encoded_oid), 2)
             # Encoded message should appear
-            self.assertIn(dumps(obj), msg)
+            self.assertIn(dumps(obj).encode('utf-8'), msg)

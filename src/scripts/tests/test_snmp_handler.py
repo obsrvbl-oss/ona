@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from logging import getLogger
-from mock import patch
 from unittest import TestCase
+from unittest.mock import patch
 
 from ona_service.snmp_handler import SnmpHandler
 

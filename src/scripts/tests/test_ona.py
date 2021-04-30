@@ -11,18 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
 import platform
-
 from datetime import datetime
 from os.path import join
-from shutil import rmtree
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-
-from mock import patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 from ona_service.ona import ONA
 from ona_service.utils import utc
@@ -30,15 +24,15 @@ from ona_service.utils import utc
 
 class ONAServiceTests(TestCase):
     def setUp(self):
-        self.temp_dir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
         # Touch a new auto configuration file
-        self.auto_config_path = join(self.temp_dir, 'config.auto')
-        with io.open(self.auto_config_path, 'wt'):
+        self.auto_config_path = join(self.temp_dir.name, 'config.auto')
+        with open(self.auto_config_path, 'wt'):
             pass
 
     def tearDown(self):
-        rmtree(self.temp_dir)
+        self.temp_dir.cleanup()
 
     def _get_instance(self, update_only, env=None):
         env = env or {}
@@ -122,7 +116,7 @@ class ONAServiceTests(TestCase):
             instance.execute()
 
         # The parameters from the host should be saved
-        with io.open(self.auto_config_path, 'rt') as infile:
+        with open(self.auto_config_path) as infile:
             actual = infile.read().splitlines()
             expected = [
                 'OBSRVBL_HOST="https://127.0.0.1"',
@@ -145,9 +139,9 @@ class ONAServiceTests(TestCase):
                 "networks": "10.0.0.0/8\r\n172.16.0.0/12\r\n192.168.0.0/16",
                 # Incorrect IPFIX rule
                 "ipfix_probe_4_bogus_thing": "yolo",
-                # Non-whitelisted setting
+                # Non-alloweed setting
                 "mykey": "myvalue",
-                # Non-whitelisted character
+                # Non-allowed character
                 "snmp_server": '";sudo adduser evil',
                 "HOST": 'https://127.0.0.1;sudo adduser evil',
             }
@@ -155,7 +149,7 @@ class ONAServiceTests(TestCase):
         with self.assertRaises(SystemExit):
             instance.execute()
 
-        with io.open(self.auto_config_path, 'rt') as infile:
+        with open(self.auto_config_path) as infile:
             actual = infile.read().splitlines()
             expected = [
                 'OBSRVBL_IPFIX_PROBE_4_TYPE="netflow-v9"',
@@ -166,7 +160,7 @@ class ONAServiceTests(TestCase):
                 'OBSRVBL_SERVICE_KEY="MyServiceKey"',
                 'OBSRVBL_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"',
             ]
-            self.assertItemsEqual(actual, expected)
+            self.assertCountEqual(actual, expected)
 
     @patch('ona_service.ona.listdir', autospec=True)
     def test_watch_ifaces_enabled(self, mock_listdir):

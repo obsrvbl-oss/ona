@@ -25,8 +25,6 @@ Goals here are:
 * if any changes from the last check, signal that we need to restart service(s)
   and apply the change.
 """
-from __future__ import print_function
-
 import logging
 import re
 
@@ -37,8 +35,8 @@ from os import environ, listdir
 from platform import platform, python_version
 from sys import exit
 
-from service import Service
-from utils import utc, validate_pna_networks
+from ona_service.service import Service
+from ona_service.utils import utc, validate_pna_networks
 
 # Logging configuration
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -52,7 +50,7 @@ AUTO_CONFIG_FILE = '/opt/obsrvbl-ona/config.auto'
 # environment; we'll sanitize them, and the site should also sanitize them as
 # well. They should be simple. The lower case character are UPPER case when
 # exported.
-CONFIG_WHITELIST = {
+CONFIG_ALLOWLIST = {
     # Parameters available on the site
     'HOST',
     'networks',
@@ -82,12 +80,12 @@ CONFIG_WHITELIST = {
     'NOTIFICATION_PUBLISHER',
     'BRO_LOG_WATCHER',
     'PDNS_CAPTURER',
-    'SERVICE_OSSEC',
     'SERVICE_SURICATA',
     'IPFIX_CAPTURER',
     'KUBERNETES_WATCHER',
     'ETA_CAPTURER',
     'ISE_POLLER',
+    'YAF_CAPTURER',
     # Other parameters
     'SERVICE_KEY',
     'PNA_IFACES',
@@ -97,6 +95,7 @@ CONFIG_WHITELIST = {
     'HOSTNAME_NETBIOS',
     'SENSOR_EXT_ONLY',
     'ISE_SERVER_NAME',
+    'ISE_SERVER_PORT',
     'ISE_NODE_NAME',
     'ISE_PASSWORD',
     'ISE_CLIENT_CERT',
@@ -123,7 +122,7 @@ class ONA(Service):
         if environ.get('OBSRVBL_WATCH_IFACES', 'false') == 'true':
             self.network_ifaces = self._get_network_ifaces()
 
-        super(ONA, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def _report_to_site(self, now=None):
         """
@@ -133,7 +132,7 @@ class ONA(Service):
         try:
             with open('/opt/obsrvbl-ona/version') as f:
                 version = f.read().strip()
-        except IOError:
+        except OSError:
             version = 'unknown'
         data = {
             'last_start': now.isoformat(),
@@ -169,7 +168,7 @@ class ONA(Service):
         try:
             with open(self.config_file) as fd:
                 return fd.read().strip()
-        except IOError:
+        except OSError:
             pass
         return ''
 
@@ -182,22 +181,22 @@ class ONA(Service):
 
     def _build_config(self, config):
         # build the config based on the JSON provided config and the known
-        # CONFIG_WHITELIST. Output should match the file we generate.
+        # CONFIG_ALLOWLIST. Output should match the file we generate.
         if not config:
             return ''
 
         # Filter out None
-        items = ((k, v) for k, v in config.iteritems() if v is not None)
+        items = ((k, v) for k, v in config.items() if v is not None)
 
         _config = []
         for key, value in items:
-            # Check for values that match the IPFIX template or the whitelist
+            # Check for values that match the IPFIX template or the allowlist
             upper_key = key.upper()
             if upper_key.startswith(IPFIX_PREFIX):
                 suffix = upper_key.rsplit('_', 1)
                 if (len(suffix) != 2) or (suffix[1] not in IPFIX_SUFFIXES):
                     continue
-            elif key not in CONFIG_WHITELIST:
+            elif key not in CONFIG_ALLOWLIST:
                 continue
 
             # Convert all values to strings, making sure truth values are lower

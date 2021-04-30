@@ -11,14 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import io
 import json
 import signal
-
 from subprocess import CalledProcessError
 from unittest import TestCase
-
-from mock import call, patch, MagicMock
+from unittest.mock import call, patch, MagicMock
 
 from ona_service.hostname_resolver import (
     ENV_HOSTNAME_DNS,
@@ -55,7 +52,9 @@ class HostnameResolverTest(TestCase):
         )
         self.assertEqual(nmblookup('192.0.2.1'), 'wksobsr01')
         mock_check_output.assert_called_once_with(
-            'timeout 1s nmblookup -A 192.0.2.1'.split()
+            'timeout 1s nmblookup -A 192.0.2.1'.split(),
+            encoding='utf-8',
+            errors='ignore',
         )
 
     @patch(PATCH_PATH.format('subprocess.check_output'), autospec=True)
@@ -98,7 +97,7 @@ class HostnameResolverTest(TestCase):
         output = {}
 
         def _send_file(data_type, path, now, suffix=None):
-            with io.open(path, 'rb') as infile:
+            with open(path) as infile:
                 output[index] = infile.read()
 
             return remote_path
@@ -135,7 +134,7 @@ class HostnameResolverTest(TestCase):
         output = {}
 
         def _send_file(data_type, path, now, suffix=None):
-            with io.open(path, 'rb') as infile:
+            with open(path) as infile:
                 output[index] = infile.read()
 
             return remote_path
@@ -180,7 +179,7 @@ class HostnameResolverTest(TestCase):
         output = {}
 
         def _send_file(data_type, path, now, suffix=None):
-            with io.open(path, 'rb') as infile:
+            with open(path) as infile:
                 output[index] = infile.read()
 
             return remote_path

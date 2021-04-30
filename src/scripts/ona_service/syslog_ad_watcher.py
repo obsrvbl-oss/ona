@@ -11,21 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
 # python builtins
 import csv
 import logging
 
 from datetime import datetime
-from gzip import GzipFile
+from gzip import open as gz_open
 from os import getenv
 from tempfile import NamedTemporaryFile
 
 # local
-from service import Service
-from log_watcher import LogNode
-from utils import utcoffset, utcnow, timestamp
+from ona_service.service import Service
+from ona_service.log_watcher import LogNode
+from ona_service.utils import utcoffset, utcnow, timestamp
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -105,10 +103,11 @@ class RemoteADLogNode(LogNode):
         self.entry = []
         self.is_complete = False
         kwargs.setdefault('encoding', 'cp1252')
-        super(RemoteADLogNode, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def flush_data(self, data, now, compress=True):
         for line in data:
+            line = line.decode(self.encoding, errors=self.errors)
             # One-line format
             if line.startswith('obsrvbl_remote-ad_oneline|'):
                 D_entry = _process_oneline(line)
@@ -134,7 +133,7 @@ class RemoteADLogNode(LogNode):
 class SyslogADWatcher(Service):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('poll_seconds', POLL_SECONDS)
-        super(SyslogADWatcher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.utcoffset = utcoffset()
         self.domain_suffix = getenv('OBSRVBL_DOMAIN_SUFFIX', '')
@@ -199,7 +198,7 @@ class SyslogADWatcher(Service):
         interesting_events = self._get_interesting_events(all_events)
         formatted_events = set(self._get_formatted_events(interesting_events))
         with NamedTemporaryFile() as f:
-            with GzipFile(fileobj=f) as gz_f:
+            with gz_open(f, mode='wt') as gz_f:
                 writer = csv.writer(gz_f)
                 writer.writerow(OUTPUT_FIELDNAMES)
                 writer.writerows(formatted_events)

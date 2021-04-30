@@ -19,7 +19,7 @@ cd /opt/obsrvbl-ona/
 
 # Poll the site for a configuration update. If one is found, the
 # script will exit.
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/ona.py
+/usr/bin/python3 /opt/obsrvbl-ona/ona_service/ona.py
 
 # Shut down all services to reload with a new environment.
 /bin/kill -TERM `cat /tmp/ona-supervisord.pid`

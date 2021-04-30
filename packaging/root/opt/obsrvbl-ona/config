@@ -1,14 +1,11 @@
 #!/bin/sh
-# This is a config file for ona-service scripts
-# It can be manually managed or managed via the Observable portal
-
+# HERE BE DRAGONS: you probably don't want to edit this file.
+# Local configuration directives go in config.local.
+# You can copy lines from here into there, but don't expect things to
+# work if you modify them here.
 set -a
 
-# By default, allow config vars to be over-written via the web portal
 OBSRVBL_MANAGE_MODE="auto"
-
-# CONFIG_AUTO is for config vars from the web portal.
-# CONFIG_LOCAL is for user-specified config vars, which take precedence
 OBSRVBL_CONFIG_AUTO="/opt/obsrvbl-ona/config.auto"
 OBSRVBL_CONFIG_LOCAL="/opt/obsrvbl-ona/config.local"
 
@@ -62,12 +59,6 @@ OBSRVBL_PDNS_CAPTURE_SECONDS="600"
 OBSRVBL_PDNS_PPS_LIMIT="100"
 
 ##
-# ona-ossec-alert-watcher
-##
-OBSRVBL_SERVICE_OSSEC="false"
-OBSRVBL_OSSEC_ALERTS_PATH="/opt/obsrvbl-ossec/logs/alerts/alerts.json"
-
-##
 # ona-suricata-alert-watcher
 ##
 OBSRVBL_SERVICE_SURICATA="false"
@@ -115,13 +106,6 @@ OBSRVBL_IPFIX_CONF="/opt/obsrvbl-ona/ipfix/sensor.conf"
 # ona-syslog-ad-watcher
 ##
 OBSRVBL_SYSLOG_AD_WATCHER="false"
-
-##
-# ona-check-point-pusher
-##
-OBSRVBL_CHECK_POINT_PUSHER="false"
-OBSRVBL_CHECK_POINT_LOGDIR="/opt/obsrvbl-ona/logs/check_point"
-OBSRVBL_CHECK_POINT_PATH="/var/log/check-point-fw.log"
 
 ##
 # eta-capturer

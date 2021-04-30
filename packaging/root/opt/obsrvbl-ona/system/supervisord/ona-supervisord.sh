@@ -17,25 +17,25 @@
 # Set up the environment
 cd /opt/obsrvbl-ona/
 . /opt/obsrvbl-ona/config
-export PYTHONPATH="/opt/obsrvbl-ona/system/python-packages"
+export PYTHONPATH="/opt/obsrvbl-ona:/opt/obsrvbl-ona/system/python-packages"
 
 # Ensure the log directory exists
 mkdir -p /opt/obsrvbl-ona/logs/ona_service
 
 # Check in with the site for configuration updates
 if [ -e /usr/bin/timeout ]; then
-    /usr/bin/timeout 60s /usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+    /usr/bin/timeout 60s /usr/bin/python3 /opt/obsrvbl-ona/ona_service/ona.py --update-only
 else
-    /usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+    /usr/bin/python3 /opt/obsrvbl-ona/ona_service/ona.py --update-only
 fi
 
 . /opt/obsrvbl-ona/config
 
 # Set up supervisord's configuration file
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/supervisor_config.py
+/usr/bin/python3 /opt/obsrvbl-ona/ona_service/supervisor_config.py
 
 # Run supervisord
-exec /usr/bin/python2.7 \
+exec /usr/bin/python3 \
     -m supervisor.supervisord \
     --nodaemon \
     -c /opt/obsrvbl-ona/system/supervisord/ona-supervisord.conf

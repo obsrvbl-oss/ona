@@ -32,10 +32,10 @@ export TZ="Etc/UTC"
 export SILK_LIBFIXBUF_SUPPRESS_WARNINGS="1"
 
 # Write the configuration file
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/flowcap_config.py -w
+/usr/bin/python3 /opt/obsrvbl-ona/ona_service/flowcap_config.py -w
 
 # Update the firewall rules
-/usr/bin/python2.7 /opt/obsrvbl-ona/ona_service/flowcap_config.py -f
+/usr/bin/python3 /opt/obsrvbl-ona/ona_service/flowcap_config.py -f
 
 exec /opt/silk/sbin/flowcap \
     --destination-directory="$OBSRVBL_IPFIX_LOGDIR" \

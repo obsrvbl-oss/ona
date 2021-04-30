@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ARCH ?= amd64
-VERSION := 4.5.0
+VERSION := 5.0.0
 
 SCRIPTS_DIR := src/scripts
 uPNA_DIR := src/uPNA
@@ -37,7 +37,7 @@ build:
 	make -C ${uPNA_DIR}
 
 copy:
-	make -C ${SCRIPTS_DIR} vendor
+	make -C ${SCRIPTS_DIR} vendor clean
 	mkdir -p ${OBSRVBL_ROOT}/
 	echo ${VERSION} > ${OBSRVBL_ROOT}/version
 	mkdir -p ${OBSRVBL_ROOT}/pna/user/

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import signal
-
 from datetime import datetime
 from os import listdir, makedirs, remove
 from os.path import exists, join
@@ -20,9 +19,7 @@ from shutil import rmtree
 from tarfile import open as tar_open
 from tempfile import gettempdir
 from unittest import TestCase
-
-
-from mock import call as MockCall, MagicMock, patch
+from unittest.mock import call as MockCall, MagicMock, patch
 
 from ona_service.pusher import Pusher, MAX_BACKLOG_DELTA
 from ona_service.utils import utc
@@ -83,7 +80,7 @@ class PusherTestCase(TestCase):
         self.assertFalse(exists(file_path))
 
 
-class PusherTestBase(object):
+class PusherTestBase:
     """
     Pusher child class tests (PNA, IPFIX) inherit from this class.
     """
@@ -116,8 +113,8 @@ class PusherTestBase(object):
         self.inst.api.send_signal.assert_any_call(
             data_type='heartbeat',
             data={
-                u'data_type': self.inst.data_type,
-                u'sensor_hb_time': '2014-03-24T14:20:30+00:00',
+                'data_type': self.inst.data_type,
+                'sensor_hb_time': '2014-03-24T14:20:30+00:00',
             }
         )
 
@@ -130,7 +127,7 @@ class PusherTestBase(object):
         self.assertFalse(any(exists(x) for x in input_paths))
 
         # The waiting group didn't get touched, did it?
-        self.assertItemsEqual(listdir(self.input_dir), self.waiting)
+        self.assertCountEqual(listdir(self.input_dir), self.waiting)
 
         # Did we send the two groups?
         expected_calls = [
@@ -148,7 +145,7 @@ class PusherTestBase(object):
         )
 
         # Did we delete the two groups?
-        self.assertItemsEqual(listdir(self.output_dir), [])
+        self.assertCountEqual(listdir(self.output_dir), [])
 
     def test_execute_backlog(self):
         # Everything the same as the normal execute() test, but the time is
@@ -164,11 +161,11 @@ class PusherTestBase(object):
         self.assertFalse(any(exists(x) for x in input_paths))
 
         # Waiting items not touched
-        self.assertItemsEqual(listdir(self.input_dir), self.waiting)
+        self.assertCountEqual(listdir(self.input_dir), self.waiting)
 
         # Nothing was sent, and the backlog was cleared
         self.assertEqual(self.inst.send_sensor_data.call_args_list, [])
-        self.assertItemsEqual(listdir(self.output_dir), [])
+        self.assertCountEqual(listdir(self.output_dir), [])
 
     def test_execute_no_delete(self):
         self._touch_files()
@@ -176,7 +173,7 @@ class PusherTestBase(object):
         self.inst.send_sensor_data.return_value = False
         self.inst.execute(self.now)
         # Then the archives should not have been deleted
-        self.assertItemsEqual(listdir(self.output_dir), self.output)
+        self.assertCountEqual(listdir(self.output_dir), self.output)
         # The tar files should still exist
         self.assertEqual(sorted(listdir(self.output_dir)), self.output)
         # The members should be as expected also
@@ -195,7 +192,7 @@ class PusherTestBase(object):
         # 0-length files should not attempt to send
         self.assertEqual(self.inst.send_sensor_data.call_count, 0)
         # They should also not be deleted
-        self.assertItemsEqual(listdir(self.output_dir), self.output)
+        self.assertCountEqual(listdir(self.output_dir), self.output)
 
     @patch('ona_service.pusher.remove', autospec=True)
     def test_execute_ioerror(self, mock_remove):
@@ -207,7 +204,7 @@ class PusherTestBase(object):
         # ...it won't be added to the tar file.
         outfile_path = join(self.output_dir, self.output[0])
         with tar_open(outfile_path, mode=self.tar_read_mode) as tarball:
-            self.assertItemsEqual(tarball.getnames(), self.ready[1:2])
+            self.assertCountEqual(tarball.getnames(), self.ready[1:2])
 
     def test_service(self):
         self._touch_files()

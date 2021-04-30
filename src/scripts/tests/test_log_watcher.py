@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #  Copyright 2015 Observable Networks
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,216 +11,36 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 import gzip
-import io
 
-from collections import namedtuple
 from datetime import datetime, timedelta
 from glob import iglob
-from json import loads
 from os import rename
 from os.path import join
-from shutil import rmtree
-from tempfile import mkdtemp, NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest import TestCase
-
-from mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 from ona_service.log_watcher import (
     check_auth_journal,
     directory_logs,
     LogWatcher,
     LogNode,
-    StatNode,
     SystemdJournalNode,
     WatchNode,
 )
 from ona_service.utils import utcnow
 
 
-class MSUtilBase(object):
-    """
-    Not Microsoft. Mock pS util.
-    """
-    cpu_time_calls = 0
-
-    @staticmethod
-    def cpu_times(percpu=False):
-        t = namedtuple('cputimes', 'user,nice,system,idle')
-        if MSUtilBase.cpu_time_calls == 1:
-            ret = t(50, 0, 500, 5000)
-        else:
-            ret = t(55, 0, 600, 6000)
-        MSUtilBase.cpu_time_calls += 1
-        return [ret]
-
-    @staticmethod
-    def disk_partitions(all=True):
-        t = namedtuple('partition', 'device,mountpoint,fstype')
-        return [t('/dev/sda1', '/', 'ext4')]
-
-    @staticmethod
-    def disk_usage(path):
-        t = namedtuple('usage', 'total,used,free,percent')
-        return t(150, 40, 110, 88.3)
-
-
-class MSUtilOld(MSUtilBase):
-    @staticmethod
-    def phymem_usage():
-        t = namedtuple('usage', 'total,used,free,percent')
-        return t(20, 18, 4, 80.0)
-
-    @staticmethod
-    def network_io_counters(pernic=True):
-        t = namedtuple('iostat', 'B_sent,B_recv,p_sent,p_recv')
-        return {'lo': t(30, 30, 18, 18)}
-
-
-class MSUtilNew(MSUtilBase):
-    @staticmethod
-    def virtual_memory():
-        t = namedtuple('usage', 'total,used,free,percent')
-        return t(21, 19, 5, 81.0)
-
-    @staticmethod
-    def net_io_counters(pernic=True):
-        t = namedtuple('iostat', 'B_sent,B_recv,p_sent,p_recv')
-        return {'lo': t(31, 31, 19, 19)}
-
-
-class StatNodeTest(TestCase):
-    def setUp(self):
-        logs = {'test-log': '/tmp/test.log'}
-        self.watcher = LogWatcher(logs=logs, watch_stats=True)
-        self.maxDiff = None
-
-    @patch('ona_service.log_watcher.HAS_PSUTIL', False)
-    def test_statnode_nopsutil(self):
-        # No psutil -> just don't exception out
-        node = StatNode(log_type='stats_log', api=self.watcher.api)
-        node.check_data()
-        stats = node._gather()
-        self.assertEqual(stats, {})
-
-    @patch('ona_service.log_watcher.psutil', MSUtilOld, create=True)
-    @patch('ona_service.log_watcher.Popen', autospec=True)
-    def test_statnode_nic_old(self, mock_Popen):
-        # predictable Popen().communicate
-        out = (
-            'lo\tLink encap:Ethernet  HWaddr ff:ff:ff:ff:ff:3f\n'
-            'inet6 addr: ffff::fff:ffff:ffff:fff/64 Scope:Link\n'
-            'UP BROADCAST RUNNING PROMISC MULTICAST\n'
-            'MTU:1500  Metric:1\n'
-            'RX packets:19738210 errors:f dropped:8 overruns:1 frame 5\n'
-            'RX bytes:2131412\n'
-        )
-        mock_Popen(['ifconfig', 'lo']).communicate.return_value = (out, '')
-
-        node = StatNode(log_type='stats_log', api=self.watcher.api)
-        stats = node._net_io_counters()
-        expected_stats = [
-            {'nic': 'lo', 'B_recv': 30, 'B_sent': 30, 'p_recv': 18,
-             'p_sent': 18, 'dropped': 8, 'overruns': 1}
-        ]
-        self.assertEqual(stats, expected_stats)
-
-    @patch('ona_service.log_watcher.psutil', MSUtilNew, create=True)
-    @patch('ona_service.log_watcher.Popen', autospec=True)
-    def test_statnode_nic_new(self, mock_Popen):
-        # predictable Popen().communicate
-        out = (
-            'lo\tLink encap:Ethernet  HWaddr ff:ff:ff:ff:ff:3f\n'
-            'inet6 addr: ffff::fff:ffff:ffff:fff/64 Scope:Link\n'
-            'UP BROADCAST RUNNING PROMISC MULTICAST\n'
-            'MTU:1500  Metric:1\n'
-            'RX packets:19738210 errors:f dropped:8 overruns:1 frame 5\n'
-            'RX bytes:2131412\n'
-        )
-        mock_Popen(['ifconfig', 'lo']).communicate.return_value = (out, '')
-
-        node = StatNode(log_type='stats_log', api=self.watcher.api)
-        stats = node._net_io_counters()
-        expected_stats = [
-            {'nic': 'lo', 'B_recv': 31, 'B_sent': 31, 'p_recv': 19,
-             'p_sent': 19, 'dropped': 8, 'overruns': 1}
-        ]
-        self.assertEqual(stats, expected_stats)
-
-    @patch('ona_service.log_watcher.psutil', MSUtilOld, create=True)
-    def test_statnode_virtual_memory_old(self):
-        node = StatNode(log_type='stats_log', api=self.watcher.api)
-        actual = node._virtual_memory()
-        expected = {'free': 4, 'percent': 80.0, 'total': 20, 'used': 18}
-        self.assertEqual(actual, expected)
-
-    @patch('ona_service.log_watcher.psutil', MSUtilNew, create=True)
-    def test_statnode_virtual_memory_new(self):
-        node = StatNode(log_type='stats_log', api=self.watcher.api)
-        actual = node._virtual_memory()
-        expected = {'free': 5, 'percent': 81.0, 'total': 21, 'used': 19}
-        self.assertEqual(actual, expected)
-
-    @patch('ona_service.log_watcher.HAS_PSUTIL', True)
-    @patch('ona_service.log_watcher.Popen', autospec=True)
-    @patch('ona_service.log_watcher.psutil', MSUtilOld, create=True)
-    @patch('ona_service.api.requests', autospec=True)
-    @patch('ona_service.log_watcher.datetime', autospec=True)
-    def test_statnode(self, mock_dt, mock_requests, mock_Popen):
-        now = datetime.utcnow()
-        mock_dt.utcnow.return_value = now
-        # predictable Popen().communicate
-        mock_Popen(['ifconfig', 'lo']).communicate.return_value = ('', '')
-        # No psutil -> just don't exception out
-        node = StatNode(log_type='stats_log', api=self.watcher.api)
-        stats = node._gather()
-        expected_stats = {
-            'cpu_times_percent': [
-                {'idle': 90.49773755656109, 'nice': 0.0,
-                 'system': 9.049773755656108, 'user': 0.45248868778280543}
-            ],
-            'virtual_memory': {
-                'free': 4, 'percent': 80.0, 'total': 20, 'used': 18
-            },
-            'disk_usage': [
-                {'total': 150, 'path': '/', 'used': 40,
-                 'percent': 88.3, 'free': 110}
-            ],
-            'net_io_counters': [
-                {'nic': 'lo', 'B_recv': 30, 'B_sent': 30,
-                 'p_recv': 18, 'p_sent': 18}
-            ],
-            'starttime': now.isoformat(),
-            'runtime': '0:00:00',
-        }
-        self.assertEqual(stats, expected_stats)
-
-        def fetch_request(*args, **kwargs):
-            data = kwargs['data'].read()
-            data_dict = loads(data)
-            # verify the data we're sending matches our expectation
-            self.assertEqual(expected_stats, data_dict)
-            return Mock()
-        mock_requests.request.side_effect = fetch_request
-
-        # now check the stuff we'll send (trigger the 1 minute interval)
-        with patch('ona_service.log_watcher.utcnow') as mock_now:
-            mock_now.side_effect = lambda: now + timedelta(seconds=61)
-            node.check_data()
-        # assertion is in fetch_request callback
-
-
 class LogNodeTestCase(TestCase):
     def setUp(self):
-        self.tmpdir = mkdtemp()
-        self.dummy_file = join(self.tmpdir, 'dummy')
+        self.temp_dir = TemporaryDirectory()
+        self.dummy_file = join(self.temp_dir.name, 'dummy')
         self.node = LogNode('one', None, self.dummy_file)
         self.now = datetime.utcnow()
 
     def tearDown(self):
-        rmtree(self.tmpdir)
+        self.temp_dir.cleanup()
 
     def test_check_data_none(self):
         # file doesn't exist yet
@@ -231,54 +50,54 @@ class LogNodeTestCase(TestCase):
 
     def test_check_data_created(self):
         # create the file and write a line
-        with open(self.dummy_file, 'w') as f:
+        with open(self.dummy_file, 'wt') as f:
             print('hello', file=f)  # should be saved, wasn't there at init
         self.node.check_data(self.now)
-        self.assertEqual(self.node.data, ['hello\n'])
+        self.assertEqual(self.node.data, [b'hello\n'])
         self.assertIsNotNone(self.node.log_file)
         self.assertIsNotNone(self.node.log_file_inode)
 
-        with open(self.dummy_file, 'a') as f:
+        with open(self.dummy_file, 'at') as f:
             print('foo', file=f)  # will be saved, new in this run
         self.node.check_data(self.now)
-        self.assertEqual(self.node.data, ['hello\n', 'foo\n'])
+        self.assertEqual(self.node.data, [b'hello\n', b'foo\n'])
         self.assertIsNotNone(self.node.log_file)
         self.assertIsNotNone(self.node.log_file_inode)
 
     def test_check_data_rolled(self):
         # create the file and write a line
-        with open(self.dummy_file, 'w') as f:
+        with open(self.dummy_file, 'wt') as f:
             print('hello', file=f)
         self.node.check_data(self.now)
-        self.assertEqual(self.node.data, ['hello\n'])
+        self.assertEqual(self.node.data, [b'hello\n'])
         self.assertIsNotNone(self.node.log_file)
         self.assertIsNotNone(self.node.log_file_inode)
 
-        with open(self.dummy_file, 'a') as f:
+        with open(self.dummy_file, 'at') as f:
             print('foo', file=f)  # will be saved, new in this run
         self.node.check_data(self.now)
-        self.assertEqual(self.node.data, ['hello\n', 'foo\n'])
+        self.assertEqual(self.node.data, [b'hello\n', b'foo\n'])
         self.assertIsNotNone(self.node.log_file)
         self.assertIsNotNone(self.node.log_file_inode)
 
         # write one last line to the old file
-        with open(self.dummy_file, 'a') as f:
+        with open(self.dummy_file, 'at') as f:
             print('bar', file=f)
         # rename the file, should persist inode
         rename(self.dummy_file, '{}.{}'.format(self.dummy_file, 1))
 
         # now create a new file
-        with open(self.dummy_file, 'w') as f:
+        with open(self.dummy_file, 'wt') as f:
             print('bye', file=f)  # should be saved, new file
         # first call should notice that the file has changed, grab the
         # remainder of the last file
         self.node.check_data(self.now)
-        self.assertEqual(self.node.data, ['hello\n', 'foo\n', 'bar\n'])
+        self.assertEqual(self.node.data, [b'hello\n', b'foo\n', b'bar\n'])
         # second call will grab the new file
         self.node.check_data(self.now)
         self.assertEqual(
             self.node.data,
-            ['hello\n', 'foo\n', 'bar\n', 'bye\n']
+            [b'hello\n', b'foo\n', b'bar\n', b'bye\n']
         )
         self.assertIsNotNone(self.node.log_file)
         self.assertIsNotNone(self.node.log_file_inode)
@@ -291,7 +110,7 @@ class LogNodeTestCase(TestCase):
         self.node.check_data(self.now)
         self.assertEqual(
             self.node.data,
-            ['hello\n', 'foo\n', 'bar\n', 'bye\n', 'hi\n']
+            [b'hello\n', b'foo\n', b'bar\n', b'bye\n', b'hi\n']
         )
         # because the file is rolling, no known next file exists
         self.assertIsNone(self.node.log_file)
@@ -305,7 +124,7 @@ class LogNodeTestCase(TestCase):
 
         self.node._set_fd()
         inode1 = self.node.log_file_inode
-        with open(self.dummy_file, 'r') as f:
+        with open(self.dummy_file) as f:
             contents = f.read()
         self.assertEqual(self.node.log_file.read(), contents)
 
@@ -321,25 +140,25 @@ class LogNodeTestCase(TestCase):
     def test_encoding(self):
         node = LogNode('one', None, self.dummy_file, encoding='cp1252')
 
-        with io.open(self.dummy_file, 'wb') as f:
-            print(b'Here\x9cs a line', file=f)
+        with open(self.dummy_file, 'wb') as f:
+            f.write(b'Here\x9cs a line\n')
 
         node.check_data(self.now)
 
-        actual = node.data[0].encode('cp1252')
+        actual = node.data[0]
         expected = b'Here\x9cs a line\n'
         self.assertEqual(actual, expected)
 
     def test_encoding_error(self):
         node = LogNode('one', None, self.dummy_file)
 
-        with io.open(self.dummy_file, 'wb') as f:
-            print(b'Here\x9cs a line', file=f)
+        with open(self.dummy_file, 'wb') as f:
+            f.write(b'Here\x9cs a line\n')
 
         node.check_data(self.now)
 
         actual = node.data[0]
-        expected = 'Heres a line\n'
+        expected = b'Heres a line\n'
         self.assertEqual(actual, expected)
 
 
@@ -372,25 +191,18 @@ class SystemdJournalNodeTestCase(TestCase):
 
 class LogWatcherMainTestCase(TestCase):
     @patch('ona_service.log_watcher.SystemdJournalNode', autospec=True)
-    @patch('ona_service.log_watcher.StatNode', autospec=True)
     @patch('ona_service.log_watcher.LogNode', autospec=True)
     def test_LogWatcherInit(
         self,
         mock_LogNode,
-        mock_StatNode,
         mock_SystemdJournalNode
     ):
         watcher = LogWatcher(
             logs={'log_name': 'log_path'},
             journals={'journal_name': ['SOME_FIELD=SOME_VALUE']},
-            watch_stats=True
         )
-        self.assertEqual(len(watcher.log_nodes), 3)
+        self.assertEqual(len(watcher.log_nodes), 2)
 
-        mock_StatNode.assert_called_once_with(
-            log_type='stats_log',
-            api=watcher.api,
-        )
         mock_LogNode.assert_called_once_with(
             log_type='log_name',
             api=watcher.api,
@@ -402,19 +214,15 @@ class LogWatcherMainTestCase(TestCase):
             journalctl_args=['SOME_FIELD=SOME_VALUE'],
         )
 
-    @patch('ona_service.log_watcher.StatNode', autospec=True)
     @patch('ona_service.log_watcher.LogNode', autospec=True)
-    def test_service(self, mock_lognode, mock_statnode):
+    def test_service(self, mock_lognode):
         watcher = LogWatcher(
             logs={'auth.log': '/tmp', 'two': '/tmp/two'},
-            watch_stats=True
         )
         watcher.execute('now')
         lognode = mock_lognode.return_value
         self.assertEqual(lognode.check_data.call_count, 2)
         lognode.check_data.assert_called_with('now')
-        statnode = mock_statnode.return_value
-        statnode.check_data.assert_called_with('now')
 
     @patch('ona_service.log_watcher.glob', autospec=True)
     def test_directory_logs(self, mock_glob):
@@ -456,15 +264,15 @@ class WatchNodeTestCase(TestCase):
         self.inst.last_send = self.now
 
         # Creates a temporary file in a known location
-        self.tmpdir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
         def fixed_temp_file(*args, **kwargs):
-            return NamedTemporaryFile(delete=False, dir=self.tmpdir)
+            return NamedTemporaryFile(delete=False, dir=self.temp_dir.name)
 
         self.fixed_temp_file = fixed_temp_file
 
     def tearDown(self):
-        rmtree(self.tmpdir)
+        self.temp_dir.cleanup()
 
     def test_flush_data_compressed(self):
         patch_src = 'ona_service.log_watcher.NamedTemporaryFile'
@@ -472,9 +280,9 @@ class WatchNodeTestCase(TestCase):
             self.inst.flush_data(self.test_data, self.later, compress=True)
 
         # Gzip-read of the file should give back the input data
-        for file_path in iglob(join(self.tmpdir, '*')):
+        for file_path in iglob(join(self.temp_dir.name, '*')):
             with gzip.open(file_path, 'rb') as infile:
-                self.assertEqual(infile.read(), ''.join(self.test_data))
+                self.assertEqual(infile.read(), b''.join(self.test_data))
 
     def test_flush_data_uncompressed(self):
         patch_src = 'ona_service.log_watcher.NamedTemporaryFile'
@@ -482,9 +290,11 @@ class WatchNodeTestCase(TestCase):
             self.inst.flush_data(self.test_data, self.later)
 
         # Direct read of the file should give back the input data
-        for file_path in iglob(join(self.tmpdir, '*')):
-            with open(file_path, 'r') as infile:
-                self.assertEqual(infile.read(), ''.join(self.test_data))
+        for file_path in iglob(join(self.temp_dir.name, '*')):
+            with open(file_path) as infile:
+                actual = infile.read()
+            expected = b''.join(self.test_data).decode('utf-8')
+            self.assertEqual(actual, expected)
 
     def test_flush_data_calls(self):
         # No data -> no calls

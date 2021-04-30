@@ -11,11 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import division, print_function, unicode_literals
-
-from glob import iglob
-from io import open
-from os.path import basename, join
+from os.path import join
 from platform import node
 from shutil import copy
 from subprocess import call
@@ -27,7 +23,7 @@ OBSRVBL_SERVICE = 'obsrvbl-ona'
 ONA_NAME_PREFIX = 'ona-'
 
 
-class BaseSystem(object):
+class BaseSystem:
     logs_group = 'adm'
     admin_group = 'root'
 
@@ -43,7 +39,7 @@ class BaseSystem(object):
         """
         Retrieves the set of users from /etc/passwd
         """
-        with open('/etc/passwd', 'r') as infile:
+        with open('/etc/passwd') as infile:
             users = {x.split(':')[0] for x in infile}
 
         return users
@@ -108,7 +104,7 @@ class BaseSystem(object):
 
         # If the identifier has already been set by configuration, don't
         # change anything.
-        with open(config_local_path, 'r') as infile:
+        with open(config_local_path) as infile:
             if any(line.startswith('OBSRVBL_ONA_NAME=') for line in infile):
                 return
 
@@ -176,7 +172,7 @@ class SystemdMixin(BaseSystem):
         return_code = self._systemctl('start', service_name)
 
         if return_code != 0:
-            err_msg = 'Error starting {}. initctl returned {}'.format(
+            err_msg = 'Error starting {}. systemctl returned {}'.format(
                 service_name, return_code
             )
             raise RuntimeError(err_msg)
@@ -188,75 +184,7 @@ class SystemdMixin(BaseSystem):
         return return_code
 
 
-class UpstartMixin(BaseSystem):
-    obsrvbl_upstart_dir = join(OBSRVBL_ROOT, 'system/upstart')
-    upstart_startup_dir = '/etc/init'
-
-    def _initctl(self, action, service_name, instance=None):
-        """
-        Calls sudo initctl action service_name key=value
-        `action` is "start" or "stop"
-        `service_name` is the name of an ONA service
-        `instance` is a (key, value) tuple like ("eth", "eth1")
-        Returns the return code from initctl.
-        """
-        args = ['sudo', 'initctl', action, service_name]
-        if instance is not None:
-            key, value = instance
-            args.append('{}={}'.format(key, value))
-
-        return call(args)
-
-    def install_services(self):
-        # Copy the service files to the upstart startup directory
-        pattern = join(self.obsrvbl_upstart_dir, '*.conf')
-        for src_path in iglob(pattern):
-            dst_path = join(self.upstart_startup_dir, basename(src_path))
-            copy(src_path, dst_path)
-
-        # Register the services
-        call(['initctl', 'reload-configuration'])
-
-    def start_service(self, service_name, instance=None):
-        return_code = self._initctl('start', service_name, instance)
-
-        if return_code != 0:
-            err_msg = 'Error starting {}. initctl returned {}'.format(
-                service_name, return_code
-            )
-            raise RuntimeError(err_msg)
-
-    def stop_service(self, service_name, instance=None):
-        return_code = self._initctl('stop', service_name, instance)
-
-        return return_code
-
-
 # Distro-style mixins
-
-class BusyBoxMixin(BaseSystem):
-    def add_user(self):
-        # Don't create a user that already exists
-        if OBSRVBL_USER in self.get_users():
-            return
-
-        # Create the system group
-        call(['addgroup', '-S', OBSRVBL_USER])
-
-        args = [
-            'adduser',
-            '-s', '/bin/false',  # No shell access allowed
-            '-G', OBSRVBL_USER,  # Assign to the system group
-            '-S',  # Create a system user
-            '-D',  # Do not assign a password
-            '-H',  # Do not create home directory
-            OBSRVBL_USER
-        ]
-        call(args)
-
-    def set_user_group(self):
-        call(['addgroup', OBSRVBL_USER, self.logs_group])
-
 
 class DebianMixin(BaseSystem):
     def add_user(self):
@@ -300,15 +228,6 @@ class RaspbianJessie(SystemdMixin, DebianMixin, BaseSystem):
     """
     Supports the  2016-03-18 version of Raspbian (based on Debian Jessie).
     """
-
-
-class RHEL_6(UpstartMixin, RedHatMixin, BaseSystem):
-    """
-    Supports Red Hat Enterprise Linux 6-compatible distributions, including
-    CentOS 6 and Scientific Linux 6. Not compatible with earlier or later
-    versions, which do not use Upstart.
-    """
-    dummy_shell = '/bin/false'
 
 
 class RHEL_7(SystemdMixin, RedHatMixin, BaseSystem):

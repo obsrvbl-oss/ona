@@ -23,7 +23,7 @@ mkdir -p $PNA_LOGDIR
 /usr/bin/sudo /sbin/ifconfig $1 up promisc
 
 # Generate the BPF filter
-export OBSRVBL_BPF="`/usr/bin/python2.7 -c "print ' or '.join('(net {})'.format(x) for x in '$OBSRVBL_NETWORKS'.split())"`"
+export OBSRVBL_BPF="`/usr/bin/python3 -c "print(' or '.join('(net {})'.format(x) for x in '$OBSRVBL_NETWORKS'.split()))"`"
 
 # Run the monitor
 exec /usr/bin/sudo \

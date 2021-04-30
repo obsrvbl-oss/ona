@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
 import glob
 import logging
@@ -22,8 +20,8 @@ from datetime import timedelta
 from subprocess import check_call, check_output, CalledProcessError
 
 # local
-from service import Service
-from utils import utcnow, utcoffset, get_ip
+from ona_service.service import Service
+from ona_service.utils import utcnow, utcoffset, get_ip
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -63,7 +61,7 @@ class SuricataAlertWatcher(Service):
         kwargs.update({
             'poll_seconds': UPDATE_INTERVAL_SECONDS,
         })
-        super(SuricataAlertWatcher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.log_dir = kwargs.get('log_dir', SURICATA_LOGDIR)
         self.log_type = 'suricata'
 

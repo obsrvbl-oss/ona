@@ -11,19 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 import io
-
 from os.path import join
 from json import load as json_load, dumps
-from shutil import rmtree
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-from urlparse import urlparse
-from tempfile import mkdtemp
+from unittest.mock import patch, MagicMock
+from urllib.parse import urlparse
 
 import requests
-from mock import patch, MagicMock
 
 from ona_service.kubernetes_watcher import (
     ENV_POD_NAME,
@@ -63,14 +59,14 @@ GET_PODS_RESPONSE = {
 
 class KubernetesWatchers(TestCase):
     def setUp(self):
-        self.tempdir = mkdtemp()
+        self.temp_dir = TemporaryDirectory()
 
-        self.k8s_ca_cert_path = join(self.tempdir, 'ca.crt')
-        with io.open(self.k8s_ca_cert_path, 'wt') as outfile:
+        self.k8s_ca_cert_path = join(self.temp_dir.name, 'ca.crt')
+        with open(self.k8s_ca_cert_path, 'wt') as outfile:
             print('CA Certificate!', file=outfile, end='')
 
-        self.k8s_token_path = join(self.tempdir, 'token')
-        with io.open(self.k8s_token_path, 'wt') as outfile:
+        self.k8s_token_path = join(self.temp_dir.name, 'token')
+        with open(self.k8s_token_path, 'wt') as outfile:
             print('Token!', file=outfile, end='')
 
         self.test_env = {
@@ -82,7 +78,7 @@ class KubernetesWatchers(TestCase):
         }
 
     def tearDown(self):
-        rmtree(self.tempdir)
+        self.temp_dir.cleanup()
 
     @patch(PATCH_PATH.format('requests.get'), autospec=True)
     def test_execute(self, mock_get):
@@ -106,12 +102,12 @@ class KubernetesWatchers(TestCase):
         # Intercept the upload, and check for expected output
         def _send_file(data_type, path, now, suffix=None):
             self.assertEqual(data_type, 'logs')
-            with open(path, 'rt') as infile:
+            with open(path) as infile:
                 actual = json_load(infile)
 
             self.assertEqual(actual, GET_PODS_RESPONSE)
 
-            return 'file://{}/mock-ona_k8s-pods'.format(self.tempdir)
+            return 'file://{}/mock-ona_k8s-pods'.format(self.temp_dir.name)
 
         # Emulate the k8s environment and run the service
         with patch.dict(PATCH_PATH.format('os.environ'), self.test_env):
@@ -136,7 +132,9 @@ class KubernetesWatchers(TestCase):
             'logs',
             {
                 'log_type': 'k8s-pods',
-                'path': 'file://{}/mock-ona_k8s-pods'.format(self.tempdir),
+                'path': (
+                    'file://{}/mock-ona_k8s-pods'.format(self.temp_dir.name)
+                )
             }
         )
 
@@ -224,7 +222,7 @@ class KubernetesWatchers(TestCase):
     def test_execute_missing_env(self, mock_get):
         # No API calls to Kubernetes or Observable should be made if there's
         # any missing environment variables
-        for key in self.test_env.iterkeys():
+        for key in self.test_env.keys():
             env = self.test_env.copy()
             env.pop(key)
             with patch.dict(PATCH_PATH.format('os.environ'), env):

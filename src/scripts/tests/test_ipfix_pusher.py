@@ -11,16 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
-
 from gzip import open as gz_open
 from os import listdir
 from os.path import join
 from unittest import TestCase
-
-from mock import call as MockCall, MagicMock, patch
+from unittest.mock import call as MockCall, MagicMock, patch
 
 from ona_service.ipfix_pusher import (
     CSV_HEADER,
@@ -40,7 +35,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         self.inst = self._get_instance(IPFIXPusher)
         self.inst._process_files = MagicMock()
         self.tar_read_mode = 'r'
-        super(IPFIXPusherTestCase, self).setUp()
+        super().setUp()
 
     def _touch_files(self):
         # Files ready for processing
@@ -67,12 +62,12 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         # Touch all the input files
         for file_name in (self.ready + self.waiting):
             file_path = join(self.input_dir, file_name)
-            io.open(file_path, 'w').close()
+            open(file_path, 'w').close()
 
         # Touch all the output file
         for file_name in self.output:
             file_path = join(self.output_dir, file_name)
-            io.open(file_path, 'w').close()
+            open(file_path, 'w').close()
 
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_process_files(self, mock_call):
@@ -113,7 +108,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         # Make sure the temporary files were deleted
         actual = listdir(self.input_dir)
         expected = self.ready + self.waiting
-        self.assertItemsEqual(actual, expected)
+        self.assertCountEqual(actual, expected)
 
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_process_files_index_filter(self, mock_call):
@@ -157,7 +152,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         # Make sure the temporary files were deleted
         actual = listdir(self.input_dir)
         expected = self.ready + self.waiting
-        self.assertItemsEqual(actual, expected)
+        self.assertCountEqual(actual, expected)
 
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_csv_header(self, mock_call):
@@ -170,7 +165,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         def side_effect(*args, **kwargs):
             if 'rwuniq' not in args[0][0]:
                 return 0
-            with io.open(args[0][14], 'wt') as f:
+            with open(args[0][14], 'wt') as f:
                 f.write(flow_line)
             return 0
 
@@ -202,7 +197,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         def side_effect(*args, **kwargs):
             if 'rwuniq' not in args[0][0]:
                 return 0
-            with io.open(args[0][14], 'wt') as f:
+            with open(args[0][14], 'wt') as f:
                 f.write(flow_line)
             return 0
 
@@ -255,7 +250,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         def side_effect(*args, **kwargs):
             if 'rwcut' not in args[0][0]:
                 return 0
-            with io.open(args[0][11], 'wt') as f:
+            with open(args[0][11], 'wt') as f:
                 f.write(flow_line_1)
                 f.write(flow_line_2)
                 f.write(flow_line_3)
@@ -301,7 +296,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         def side_effect(*args, **kwargs):
             if 'rwuniq' not in args[0][0]:
                 return 0
-            with io.open(args[0][14], 'wt') as f:
+            with open(args[0][14], 'wt') as f:
                 f.write(flow_line)
                 f.write(fixable_line)
                 f.write(unfixable_line)

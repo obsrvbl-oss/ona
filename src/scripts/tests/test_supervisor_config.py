@@ -11,16 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
-import io
-
-from ConfigParser import RawConfigParser
+from configparser import RawConfigParser
 from os import remove
 from unittest import TestCase
+from unittest.mock import patch
 from tempfile import NamedTemporaryFile
-
-from mock import patch
 
 from ona_service.supervisor_config import (
     DEFAULT_PARAMETERS,
@@ -60,7 +55,7 @@ class SupervisorConfigTestCase(TestCase):
         self.infile_path = NamedTemporaryFile(delete=False).name
         self.outfile_path = NamedTemporaryFile(delete=False).name
 
-        with io.open(self.infile_path, mode='wt') as f:
+        with open(self.infile_path, mode='wt') as f:
             f.write(INFILE_CONTENTS)
 
         self.inst = SupervisorConfig(
@@ -70,13 +65,6 @@ class SupervisorConfigTestCase(TestCase):
     def tearDown(self):
         remove(self.infile_path)
         remove(self.outfile_path)
-
-    def test_module(self):
-        # Ensure that Supervisor is import-able
-        import supervisor.supervisord
-        self.assertEqual(
-            supervisor.supervisord.__name__, 'supervisor.supervisord'
-        )
 
     @patch('ona_service.supervisor_config.getenv', mock_getenv)
     def test_sections(self):
@@ -95,7 +83,7 @@ class SupervisorConfigTestCase(TestCase):
             'program:ona-pdns-monitor',
             'program:ona-pdns-pusher',
         ]
-        self.assertItemsEqual(actual, expected)
+        self.assertCountEqual(actual, expected)
 
     @patch('ona_service.supervisor_config.getenv', mock_getenv)
     def test_standard_program(self):
@@ -151,7 +139,7 @@ class SupervisorConfigTestCase(TestCase):
 
         actual = new_config.sections()
         expected = self.inst.config.sections()
-        self.assertItemsEqual(actual, expected)
+        self.assertCountEqual(actual, expected)
 
         for section in new_config.sections():
             actual = dict(new_config.items(section))

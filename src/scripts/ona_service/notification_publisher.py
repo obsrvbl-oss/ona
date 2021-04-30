@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
 from os import environ as os_environ
 from json import dumps
@@ -22,9 +20,9 @@ from socket import gethostname, SOCK_DGRAM, SOCK_STREAM
 from time import gmtime, sleep
 
 # local
-from service import Service
-from snmp_handler import SnmpHandler, SNMP_TRAP_PORT, V2 as SNMPV2
-from utils import utc, utcnow, persistent_dict
+from ona_service.service import Service
+from ona_service.snmp_handler import SnmpHandler, SNMP_TRAP_PORT, V2 as SNMPV2
+from ona_service.utils import utc, utcnow, persistent_dict
 
 logger = getLogger(__name__)
 
@@ -77,7 +75,7 @@ def config(key):
 # how we reload the config
 def _reload_config():
     global _CONFIG
-    _CONFIG = {cfg_format(k): v for k, v in CONFIG_DEFAULTS.iteritems()}
+    _CONFIG = {cfg_format(k): v for k, v in CONFIG_DEFAULTS.items()}
     _CONFIG.update(os_environ)
 
 
@@ -150,7 +148,7 @@ class NotificationPublisher(Service):
         kwargs.update({
             'poll_seconds': UPDATE_INTERVAL_SECONDS,
         })
-        super(NotificationPublisher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.state = persistent_dict(STATE_FILE)
         self.logger = create_logger()
 

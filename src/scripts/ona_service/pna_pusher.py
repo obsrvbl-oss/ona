@@ -11,15 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import print_function, unicode_literals
-
 # python builtins
 import logging
 
 from os import getenv
 
 # local
-from pusher import Pusher
+from ona_service.pusher import Pusher
 
 # determine compression to use for transfer
 try:
@@ -56,7 +54,7 @@ class PnaPusher(Pusher):
         # archives will be compressed before transmission
         self.tar_mode = TAR_MODE
 
-        super(PnaPusher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
 
 if __name__ == '__main__':

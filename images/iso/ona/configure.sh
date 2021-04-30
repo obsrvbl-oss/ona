@@ -28,9 +28,3 @@ mv /root/ona/motd.tail /etc/update-motd.d/01-obsrvbl
 # Install the ONA service package
 DEBIAN_FRONTEND=noninteractive apt install -y /root/ona/netsa-pkg.deb
 DEBIAN_FRONTEND=noninteractive apt install -y /root/ona/ona-service.deb
-
-# Mark the Observable repository for automatic update
-if [ -e /etc/apt/apt.conf.d/50unattended-upgrades ]; then
-    cp /root/ona/51obsrvbl-upgrades /etc/apt/apt.conf.d/51obsrvbl-upgrades
-    chmod 644 /etc/apt/apt.conf.d/51obsrvbl-upgrades
-fi
