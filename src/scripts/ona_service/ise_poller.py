@@ -212,11 +212,16 @@ class IsePoller(Service):
         lookup_resp = self._pxgrid_request(
             lookup_url, lookup_data, self.password
         )
-        service = lookup_resp['services'][0]
-        peer_node_name = service['nodeName']
-        base_url = service['properties']['restBaseUrl']
+        all_services = lookup_resp.get('services')
+        if not all_services:
+            logging.warning('No services for com.cisco.ise.session')
+            return
 
-        return peer_node_name, base_url
+        for service in all_services:
+            peer_node_name = service['nodeName']
+            base_url = service['properties']['restBaseUrl']
+
+            yield peer_node_name, base_url
 
     def _get_secret(self, peer_node_name):
         access_url = URL_TEMPLATE.format(
@@ -285,14 +290,16 @@ class IsePoller(Service):
             logging.warning('Activate request failed')
             return
 
-        # Get the session service information
-        peer_node_name, base_url = self._lookup_service()
-        secret = self._get_secret(peer_node_name)
-
         # Do the query (starting one tick after the last poll) and save the
         # most recent timestamp for next time.
         start_dt = self.last_poll + TICK_DELTA
-        sessions = self._query_sessions(base_url, start_dt, secret)
+
+        # Query each session service source for new events
+        sessions = []
+        for peer_node_name, base_url in self._lookup_service():
+            secret = self._get_secret(peer_node_name)
+            sessions += self._query_sessions(base_url, start_dt, secret)
+
         if not sessions:
             logging.info('No sessions since %s', self.last_poll)
             return

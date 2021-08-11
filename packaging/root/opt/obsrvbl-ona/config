@@ -134,7 +134,10 @@ OBSRVBL_ISE_POLLER="false"
 # OBSRVBL_ISE_CLIENT_KEY="/etc/ise_client_key.pem"
 # OBSRVBL_ISE_CA_CERT="/etc/ise_client_key.pem"
 
-# load up auto and local config
+# Load any system-wide environment variables
+[ -f /etc/environment ] && . /etc/environment
+
+# Load remote configuration and local overrides
 [ -f $OBSRVBL_CONFIG_AUTO ] && . $OBSRVBL_CONFIG_AUTO
 [ -f $OBSRVBL_CONFIG_LOCAL ] && . $OBSRVBL_CONFIG_LOCAL
 

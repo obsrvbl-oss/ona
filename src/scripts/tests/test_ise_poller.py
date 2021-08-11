@@ -308,15 +308,20 @@ class IsePollerTests(TestCase):
                                     'restBaseUrl': 'https://localhost:8241'
                                 },
                             },
+                            {
+                                'nodeName': 'service-node',
+                                'properties': {
+                                    'restBaseUrl': 'https://localhost:8242'
+                                },
+                            },
                         ]
                     }
                 # Secret request
                 if url.endswith('/AccessSecret'):
                     expected_input = {'peerNodeName': 'service-node'}
                     output_json = {'secret': 'service-node-secret'}
-            # The peer node answers the Get Sessions requests
+            # The peer nodes answer the Get Sessions requests
             elif url == ('https://localhost:8241/getSessions'):
-                # The peer node uses the secret for authorization
                 self.assertEqual(
                     kwargs['auth'], ('ona-node', 'service-node-secret')
                 )
@@ -324,10 +329,20 @@ class IsePollerTests(TestCase):
                 expected_input = {
                     'startTimestamp': (self.now + TICK_DELTA).isoformat()
                 }
-                output_json = {'sessions': SERVER_SESSIONS}
+                output_json = {'sessions': SERVER_SESSIONS[:-1]}
+                self.assertEqual(kwargs['headers'], self.expected_headers)
+            elif url == ('https://localhost:8242/getSessions'):
+                self.assertEqual(
+                    kwargs['auth'], ('ona-node', 'service-node-secret')
+                )
+                expected_input = {
+                    'startTimestamp': (self.now + TICK_DELTA).isoformat()
+                }
+                output_json = {'sessions': SERVER_SESSIONS[-1:]}
                 self.assertEqual(kwargs['headers'], self.expected_headers)
 
             else:
+                expected_input = None
                 resp.status_code = 404
 
             self.assertEqual(json, expected_input)
