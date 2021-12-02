@@ -22,15 +22,18 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch, MagicMock
 
+from dateutil.parser import parse as dt_parse
 from requests import Response
 
 from ona_service.ise_poller import (
+    DEFAULT_ISE_STATE_FILE,
     ENV_ISE_CA_CERT,
     ENV_ISE_CLIENT_CERT,
     ENV_ISE_CLIENT_KEY,
     ENV_ISE_NODE_NAME,
     ENV_ISE_PASSWORD,
     ENV_ISE_SERVER_NAME,
+    ENV_ISE_STATE_FILE,
     IsePoller,
     SEND_FILE_TYPE,
     SENSORDATA_TYPE,
@@ -147,6 +150,9 @@ class IsePollerTests(TestCase):
             ENV_ISE_CLIENT_CERT: self.client_cert,
             ENV_ISE_CLIENT_KEY: self.client_key,
             ENV_ISE_CA_CERT: self.ca_cert,
+            ENV_ISE_STATE_FILE: join(
+                self.temp_dir.name, DEFAULT_ISE_STATE_FILE
+            ),
         }
         base_env.update(env)
 
@@ -314,6 +320,12 @@ class IsePollerTests(TestCase):
                                     'restBaseUrl': 'https://localhost:8242'
                                 },
                             },
+                            {
+                                'nodeName': 'service-node',
+                                'properties': {
+                                    'restBaseUrl': 'https://localhost:8243'
+                                },
+                            },
                         ]
                     }
                 # Secret request
@@ -321,7 +333,7 @@ class IsePollerTests(TestCase):
                     expected_input = {'peerNodeName': 'service-node'}
                     output_json = {'secret': 'service-node-secret'}
             # The peer nodes answer the Get Sessions requests
-            elif url == ('https://localhost:8241/getSessions'):
+            elif url == 'https://localhost:8241/getSessions':
                 self.assertEqual(
                     kwargs['auth'], ('ona-node', 'service-node-secret')
                 )
@@ -329,18 +341,22 @@ class IsePollerTests(TestCase):
                 expected_input = {
                     'startTimestamp': (self.now + TICK_DELTA).isoformat()
                 }
-                output_json = {'sessions': SERVER_SESSIONS[:-1]}
+                self.assertIsNotNone(dt_parse(json['startTimestamp']).tzinfo)
+                output_json = {'sessions': []}
                 self.assertEqual(kwargs['headers'], self.expected_headers)
-            elif url == ('https://localhost:8242/getSessions'):
+            elif (
+                url == 'https://localhost:8242/getSessions'
+                or url == 'https://localhost:8243/getSessions'
+            ):
                 self.assertEqual(
                     kwargs['auth'], ('ona-node', 'service-node-secret')
                 )
                 expected_input = {
                     'startTimestamp': (self.now + TICK_DELTA).isoformat()
                 }
-                output_json = {'sessions': SERVER_SESSIONS[-1:]}
+                self.assertIsNotNone(dt_parse(json['startTimestamp']).tzinfo)
+                output_json = {'sessions': SERVER_SESSIONS}
                 self.assertEqual(kwargs['headers'], self.expected_headers)
-
             else:
                 expected_input = None
                 resp.status_code = 404
@@ -369,6 +385,7 @@ class IsePollerTests(TestCase):
             OBSRVBL_ISE_NODE_NAME='ona-node',
             OBSRVBL_ISE_PASSWORD='ona-password',
         )
+        inst.state_dict['last_poll'] = self.now.isoformat()
         inst.api.send_file.side_effect = send_file
 
         # Do the deed
@@ -385,4 +402,8 @@ class IsePollerTests(TestCase):
                 'data_type': SENSORDATA_TYPE,
                 'data_path': 'file:///tmp/ise_data.jsonl.gz',
             }
+        )
+        self.assertEqual(
+            dt_parse(inst.state_dict['last_poll']),
+            dt_parse('2019-01-29T12:34:01.100-06:00')
         )
