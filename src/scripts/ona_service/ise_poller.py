@@ -27,7 +27,13 @@ from requests import post
 from dateutil.parser import parse as dt_parse
 
 from ona_service.service import Service
-from ona_service.utils import exploded_ip, is_ip_address, utc, utcnow
+from ona_service.utils import (
+    exploded_ip,
+    is_ip_address,
+    persistent_dict,
+    utc,
+    utcnow,
+)
 
 FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -42,6 +48,8 @@ ENV_ISE_PASSWORD = 'OBSRVBL_ISE_PASSWORD'
 ENV_ISE_CLIENT_CERT = 'OBSRVBL_ISE_CLIENT_CERT'
 ENV_ISE_CLIENT_KEY = 'OBSRVBL_ISE_CLIENT_KEY'
 ENV_ISE_CA_CERT = 'OBSRVBL_ISE_CA_CERT'
+ENV_ISE_STATE_FILE = 'OBSRVBL_ISE_STATE_FILE'
+DEFAULT_ISE_STATE_FILE = '.ise-poller.state'
 
 POLL_SECONDS = 600
 TICK_DELTA = timedelta(microseconds=1000)
@@ -61,7 +69,17 @@ class IsePoller(Service):
         self.client_key = os.environ.get(ENV_ISE_CLIENT_KEY, '')
         self.ca_cert = os.environ.get(ENV_ISE_CA_CERT, '')
 
-        self.last_poll = None
+        state_file = os.environ.get(
+            ENV_ISE_STATE_FILE, DEFAULT_ISE_STATE_FILE
+        )
+        self.state_dict = persistent_dict(state_file)
+
+        if 'last_poll' not in self.state_dict:
+            last_poll = (
+                utcnow().replace(tzinfo=utc) - timedelta(seconds=POLL_SECONDS)
+            )
+            self.state_dict['last_poll'] = last_poll.isoformat()
+
         self.cert_dir = join(gettempdir(), 'ise_poller')
         self.rewrite_urls = False
 
@@ -212,11 +230,16 @@ class IsePoller(Service):
         lookup_resp = self._pxgrid_request(
             lookup_url, lookup_data, self.password
         )
-        service = lookup_resp['services'][0]
-        peer_node_name = service['nodeName']
-        base_url = service['properties']['restBaseUrl']
+        all_services = lookup_resp.get('services')
+        if not all_services:
+            logging.warning('No services for com.cisco.ise.session')
+            return
 
-        return peer_node_name, base_url
+        for service in all_services:
+            peer_node_name = service['nodeName']
+            base_url = service['properties']['restBaseUrl']
+
+            yield peer_node_name, base_url
 
     def _get_secret(self, peer_node_name):
         access_url = URL_TEMPLATE.format(
@@ -265,7 +288,6 @@ class IsePoller(Service):
         # remote storage location.
         now = now or utcnow()
         now = now.replace(tzinfo=utc)
-        self.last_poll = self.last_poll or now
         ts = now.replace(
             minute=(now.minute // 10) * 10, second=0, microsecond=0
         )
@@ -285,16 +307,24 @@ class IsePoller(Service):
             logging.warning('Activate request failed')
             return
 
-        # Get the session service information
-        peer_node_name, base_url = self._lookup_service()
-        secret = self._get_secret(peer_node_name)
-
         # Do the query (starting one tick after the last poll) and save the
         # most recent timestamp for next time.
-        start_dt = self.last_poll + TICK_DELTA
-        sessions = self._query_sessions(base_url, start_dt, secret)
+        start_dt = dt_parse(self.state_dict['last_poll']) + TICK_DELTA
+
+        # Query each session service source for new events
+        # "ServiceLookup may return more than one nodes providing this service.
+        # Each node is a replica of each other. In other words, connecting to
+        # one of these nodes is sufficient" (from https://git.io/JGaZJ)
+        sessions = []
+        for peer_node_name, base_url in self._lookup_service():
+            secret = self._get_secret(peer_node_name)
+            node_sessions = self._query_sessions(base_url, start_dt, secret)
+            sessions += node_sessions
+            if node_sessions:
+                break
+
         if not sessions:
-            logging.info('No sessions since %s', self.last_poll)
+            logging.info('No sessions since %s', self.state_dict['last_poll'])
             return
 
         with NamedTemporaryFile() as f:
@@ -319,7 +349,10 @@ class IsePoller(Service):
                 self.api.send_signal(data_type='sensordata', data=data)
 
         # Save the last poll time
-        self.last_poll = max(dt_parse(s['timestamp']) for s in sessions)
+        last_session_timestamp = max(
+            dt_parse(s['timestamp']) for s in sessions
+        )
+        self.state_dict['last_poll'] = last_session_timestamp.isoformat()
 
 
 if __name__ == '__main__':
