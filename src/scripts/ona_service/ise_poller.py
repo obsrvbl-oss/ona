@@ -23,7 +23,7 @@ from secrets import token_hex
 from tempfile import gettempdir, NamedTemporaryFile
 from urllib.parse import urlparse
 
-from requests import post
+from requests import post, exceptions
 from dateutil.parser import parse as dt_parse
 
 from ona_service.service import Service
@@ -53,7 +53,7 @@ DEFAULT_ISE_STATE_FILE = '.ise-poller.state'
 
 POLL_SECONDS = 600
 TICK_DELTA = timedelta(microseconds=1000)
-URL_TEMPLATE = 'https://{}:{}/pxgrid/control/{}'
+URL_TEMPLATE = 'https://{}:{}/pxgrid/control/{}'.format
 
 
 class IsePoller(Service):
@@ -69,93 +69,92 @@ class IsePoller(Service):
         self.client_key = os.environ.get(ENV_ISE_CLIENT_KEY, '')
         self.ca_cert = os.environ.get(ENV_ISE_CA_CERT, '')
 
-        state_file = os.environ.get(
-            ENV_ISE_STATE_FILE, DEFAULT_ISE_STATE_FILE
-        )
+        state_file = os.environ.get(ENV_ISE_STATE_FILE, DEFAULT_ISE_STATE_FILE)
         self.state_dict = persistent_dict(state_file)
 
         if 'last_poll' not in self.state_dict:
-            last_poll = (
-                utcnow().replace(tzinfo=utc) - timedelta(seconds=POLL_SECONDS)
+            last_poll = utcnow().replace(tzinfo=utc) - timedelta(
+                seconds=POLL_SECONDS
             )
             self.state_dict['last_poll'] = last_poll.isoformat()
 
         self.cert_dir = join(gettempdir(), 'ise_poller')
         self.rewrite_urls = False
 
-    def _validate_certificate(self, file_path, env_var):
-        # The certificate file has to exist
+    @staticmethod
+    def _get_first_line_from_text_file(file_path: str):
+        # The file has to be a readable text file
         try:
             with open(file_path, errors='ignore') as infile:
-                first_line = infile.readline()
+                # Return first line
+                return infile.readline()
+        except FileNotFoundError:
+            logging.error('No such file or directory: "%s"', file_path)
         except OSError:
-            logging.error('Could not open %s from %s', file_path, env_var)
-            return False
+            logging.error('Could not open "%s"', file_path)
 
-        # Verify that the file probably contains a certificate
-        if 'BEGIN CERTIFICATE' not in first_line:
-            logging.error(
-                'Invalid certificate at %s from %s', file_path, env_var
+    def _validate_cert(self, file_path: str, env_var: str):
+        # The client certificate has to exist
+        if file_path:
+            first_line = self._get_first_line_from_text_file(file_path)
+            if first_line:
+                # Verify that the file looks like a certificate
+                if 'BEGIN CERTIFICATE' not in first_line:
+                    logging.error(
+                        'Invalid certificate at "%s" from "%s"',
+                        file_path,
+                        env_var,
+                    )
+                else:
+                    return True  # return false anywhere else
+        else:
+            logging.info(
+                'Local copy of certificate (%s) does not exist', env_var
             )
-            return False
 
-        return True
-
-    def _validate_client_key(self):
+    def _validate_client_key(self, file_path: str, env_var: str):
         # The client key has to exist
-        try:
-            with open(self.client_key, errors='ignore') as infile:
-                first_line = infile.readline()
-        except OSError:
-            logging.error(
-                'Could not open %s from %s',
-                self.client_key,
-                ENV_ISE_CLIENT_KEY
+        if file_path:
+            first_line = self._get_first_line_from_text_file(file_path)
+            if first_line:
+                # The client key must not be encrypted
+                if 'BEGIN ENCRYPTED PRIVATE KEY' in first_line:
+                    logging.error(
+                        'The client key at "%s" must be decrypted before use',
+                        file_path,
+                    )
+                # Verify that the client key is unencrypted
+                elif 'BEGIN RSA PRIVATE KEY' not in first_line:
+                    logging.error('Invalid client key at "%s"', file_path)
+                else:
+                    return True  # return false anywhere else
+            else:
+                logging.error(
+                    'The private key at %s from %s '
+                    'must be decrypted before use',
+                    file_path,
+                    env_var,
+                )
+        else:
+            logging.info(
+                'Local copy of private key (%s) does not exist', env_var
             )
-            return False
-
-        # Common failure: the client key must not be encrypted
-        if 'BEGIN ENCRYPTED PRIVATE KEY' in first_line:
-            logging.error(
-                'The client key at %s from %s must be decrypted before use',
-                self.client_key,
-                ENV_ISE_CLIENT_KEY
-            )
-            return False
-
-        # Verify that the client key is unencrypted
-        if 'BEGIN RSA PRIVATE KEY' not in first_line:
-            logging.error(
-                'Invalid client key at %s from %s',
-                self.client_key,
-                ENV_ISE_CLIENT_KEY
-            )
-            return False
-
-        return True
 
     def _validate_configuration(self):
         if not self.server_name:
             logging.error('%s is not set', ENV_ISE_SERVER_NAME)
-            return False
-
-        if not self._validate_certificate(
-            self.client_cert, ENV_ISE_CLIENT_CERT
+        elif (
+            self._validate_cert(self.client_cert, ENV_ISE_CLIENT_CERT)
+            and self._validate_cert(self.ca_cert, ENV_ISE_CA_CERT)
+            and self._validate_client_key(self.client_key, ENV_ISE_CLIENT_KEY)
         ):
-            return False
+            return True  # return false anywhere else
 
-        if not self._validate_certificate(self.ca_cert, ENV_ISE_CLIENT_KEY):
-            return False
-
-        if not self._validate_client_key():
-            return False
-
-        return True
-
-    def _write_remote_data(self, file_path, data):
+    @staticmethod
+    def _write_remote_data(file_path, data):
         # Touch a file, change its permissions so others can't read it, and
         # then write to it.
-        with open(file_path, mode='wt') as f:
+        with open(file_path, mode='wt'):
             pass
 
         os.chmod(file_path, 0o600)
@@ -201,29 +200,35 @@ class IsePoller(Service):
             url = parsed_url._replace(netloc=netloc).geturl()
             verify = False
 
-        response = post(
-            url=url,
-            json=json_data,
-            auth=(self.node_name, password),
-            headers={'Accept': 'application/json'},
-            cert=(self.client_cert, self.client_key),
-            verify=verify,
-        )
-        response.raise_for_status()
+        try:
+            response = post(
+                url=url,
+                json=json_data,
+                auth=(self.node_name, password),
+                headers={'Accept': 'application/json'},
+                cert=(self.client_cert, self.client_key),
+                verify=verify,
+            )
+            response.raise_for_status()
+        except exceptions.RequestException or exceptions.HTTPError as e:
+            logging.warning('PxGrid request to %s has failed', url)
+            logging.warning(e)
+            logging.debug('Client certificate: %s', self.client_cert)
+            logging.debug('CA Certificate: %s', verify)
+            return False
+
         return response.json()
 
     def _activate(self):
-        activate_url = URL_TEMPLATE.format(
+        activate_url = URL_TEMPLATE(
             self.server_name, self.server_port, 'AccountActivate'
         )
         activate_resp = self._pxgrid_request(activate_url, {}, self.password)
-        if activate_resp.get('accountState') != 'ENABLED':
-            return False
-
-        return True
+        if activate_resp and activate_resp.get('accountState') == 'ENABLED':
+            return True
 
     def _lookup_service(self):
-        lookup_url = URL_TEMPLATE.format(
+        lookup_url = URL_TEMPLATE(
             self.server_name, self.server_port, 'ServiceLookup'
         )
         lookup_data = {'name': 'com.cisco.ise.session'}
@@ -242,7 +247,7 @@ class IsePoller(Service):
             yield peer_node_name, base_url
 
     def _get_secret(self, peer_node_name):
-        access_url = URL_TEMPLATE.format(
+        access_url = URL_TEMPLATE(
             self.server_name, self.server_port, 'AccessSecret'
         )
         access_data = {'peerNodeName': peer_node_name}
@@ -295,6 +300,10 @@ class IsePoller(Service):
         # Check the saved configuration. If it's not complete, try to retrieve
         # configuration from the server.
         if not self._validate_configuration():
+            logging.info(
+                'Downloading configuration files '
+                'and certificates from remote server'
+            )
             self._get_remote_configuration()
             if not self._validate_configuration():
                 logging.error('Invalid configuration, could not start')
@@ -304,7 +313,7 @@ class IsePoller(Service):
 
         # Activate the pxGrid session
         if not self._activate():
-            logging.warning('Activate request failed')
+            logging.warning('pxGrid activate request failed')
             return
 
         # Do the query (starting one tick after the last poll) and save the
@@ -338,7 +347,7 @@ class IsePoller(Service):
                 f.name,
                 ts,
                 prefix=now.strftime('%Y-%m-%d-%H-%M-%S'),
-                suffix='{}.jsonl.gz'.format(token_hex(4))
+                suffix='{}.jsonl.gz'.format(token_hex(4)),
             )
             if remote_path is not None:
                 data = {

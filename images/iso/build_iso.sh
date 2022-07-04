@@ -50,8 +50,8 @@ ubuntu_name="ubuntu-${RELEASE}-server-${ARCH}.iso"
 ona_name="ona-${RELEASE}-server-${ARCH}.iso"
 ubuntu_url="${url:-$($DIR/build_iso_helper $RELEASE $VARIANT)}"
 test -n "$ubuntu_url" || fatal "failed getting Ubuntu ISO download URL"
-ona_service_url="https://s3.amazonaws.com/onstatic/ona/master/ona-service_UbuntuXenial_amd64.deb"
-netsa_pkg_url="http://onstatic.s3.amazonaws.com/netsa-pkg.deb"
+ona_service_url="https://s3.amazonaws.com/onstatic/ona-service/master/ona-service_UbuntuXenial_amd64.deb"
+netsa_pkg_url="https://assets-production.obsrvbl.com/ona-packages/netsa/v0.1.27/netsa-pkg.deb"
 
 shift $(($OPTIND-1))
 
