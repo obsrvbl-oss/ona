@@ -24,7 +24,7 @@ $ sudo apt install ./ona-service_UbuntuXenial_amd64.deb
 To monitor NetFlow traffic, you'll also need to install tools from the [CERT NetSA Security Suite](https://tools.netsa.cert.org/):
 
 ```
-$ wget http://onstatic.s3.amazonaws.com/netsa-pkg.deb
+$ wget https://assets-production.obsrvbl.com/ona-packages/netsa/v0.1.27/netsa-pkg.deb
 $ sudo apt install ./netsa-pkg.deb
 ```
 
