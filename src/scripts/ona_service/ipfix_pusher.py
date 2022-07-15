@@ -38,7 +38,10 @@ DEFAULT_MONITOR_NETS = "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 
 ENV_IPFIX_INDEX_RANGES = 'OBSRVBL_IPFIX_INDEX_RANGES'
 
-CSV_HEADER = 'srcaddr,dstaddr,srcport,dstport,protocol,bytes,packets,start,end'
+CSV_HEADER = (
+    'srcaddr,dstaddr,srcport,dstport,protocol,bytes,packets,start,end'
+    ',first_direction'
+)
 RWFILTER_PATH = '/opt/silk/bin/rwfilter'
 RWUNIQ_PATH = '/opt/silk/bin/rwuniq'
 RWCUT_PATH = '/opt/silk/bin/rwcut'
@@ -126,7 +129,7 @@ class IPFIXPusher(Pusher):
             '--sort-output',
             '--column-sep', ',',
             '--timestamp-format', 'epoch',
-            '--fields', 'sIp,dIp,sPort,dPort,protocol',
+            '--fields', 'sIp,dIp,sPort,dPort,protocol,type',
             '--values', 'Bytes,Packets,sTime-Earliest,eTime-Latest',
             '--output-path', output_path,
             input_path,
@@ -149,7 +152,7 @@ class IPFIXPusher(Pusher):
             '--column-sep', ',',
             '--timestamp-format', 'epoch',
             '--fields',
-            'sIp,dIp,sPort,dPort,protocol,Bytes,Packets,sTime,eTime',
+            'sIp,dIp,sPort,dPort,protocol,Bytes,Packets,sTime,eTime,type',
             '--output-path', output_path,
             input_path,
         ]
@@ -261,6 +264,17 @@ class IPFIXPusher(Pusher):
 
         return datetime.strptime(prefix, self.file_fmt)
 
+    def _format_first_direction(self, rows):
+        for row in rows:
+            direction = str(row.get('first_direction', '')).lower().strip()
+            if direction == 'in':
+                row['first_direction'] = 1
+            elif direction == 'out':
+                row['first_direction'] = 0
+            else:
+                row['first_direction'] = -1
+            yield row
+
     def _silk_to_csv(self, input_path, output_path, quirks=None):
         ts_received = timestamp(self._get_received_datetime(input_path))
         quirks = quirks or {}
@@ -290,6 +304,8 @@ class IPFIXPusher(Pusher):
             # If the NetFlow source writes 0 for the protocol, try to fix it
             if quirks.get('fix_zero_protocol'):
                 rows = self._match_zero_protocol(rows)
+
+            rows = self._format_first_direction(rows)
 
             csv_writer.writerows(rows)
 

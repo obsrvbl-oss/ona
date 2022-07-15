@@ -96,7 +96,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
                 '--sort-output',
                 '--column-sep', ',',
                 '--timestamp-format', 'epoch',
-                '--fields', 'sIp,dIp,sPort,dPort,protocol',
+                '--fields', 'sIp,dIp,sPort,dPort,protocol,type',
                 '--values', 'Bytes,Packets,sTime-Earliest,eTime-Latest',
                 '--output-path', temp_path,
                 file_path,
@@ -140,7 +140,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
                 '--sort-output',
                 '--column-sep', ',',
                 '--timestamp-format', 'epoch',
-                '--fields', 'sIp,dIp,sPort,dPort,protocol',
+                '--fields', 'sIp,dIp,sPort,dPort,protocol,type',
                 '--values', 'Bytes,Packets,sTime-Earliest,eTime-Latest',
                 '--output-path', temp_path,
                 file_path,
@@ -159,7 +159,11 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         self._touch_files()
         flow_line = (
             '198.22.253.72,192.168.207.199,80,61391,6,'
-            '58,1,1459535021,1459535021\n'
+            '58,1,1459535021,1459535021,in\n'
+        )
+        fixed_line = (
+            '198.22.253.72,192.168.207.199,80,61391,6,'
+            '58,1,1459535021,1459535021,1\n'
         )
 
         def side_effect(*args, **kwargs):
@@ -179,7 +183,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         with gz_open(input_paths[0], 'rt') as infile:
             lines = infile.readlines()
             self.assertEqual(lines[0], CSV_HEADER + '\n')
-            self.assertEqual(lines[1], flow_line)
+            self.assertEqual(lines[1], fixed_line)
 
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_fix_sonicwall(self, mock_call):
@@ -187,11 +191,11 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         # For SonicWALL the timestamps get replaced
         flow_line = (
             '198.22.253.72,192.168.207.199,80,61391,6,'
-            '58,1,1459535021,1459535021\n'
+            '58,1,1459535021,1459535021,in\n'
         )
         altered_line = (
             '198.22.253.72,192.168.207.199,80,61391,6,'
-            '58,1,1395669540,1395669540\n'
+            '58,1,1395669540,1395669540,1\n'
         )
 
         def side_effect(*args, **kwargs):
@@ -217,44 +221,37 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_fix_meraki(self, mock_call):
         self._touch_files()
-        # Intermediate report - will get subsumed by the next line
-        flow_line_1 = (
-            '198.22.253.72,192.168.207.199,80,61391,6,'
-            '58,1,1459535021,1459535021\n'
-        )
-        # Final report before reset - this will show up in the output
-        flow_line_2 = (
-            '198.22.253.72,192.168.207.199,80,61391,6,'
-            '158,1,1459535021,1459535021\n'
-        )
-        # After the reset - this won't show up
-        flow_line_3 = (
-            '198.22.253.72,192.168.207.199,80,61391,6,'
-            '157,1,1459535021,1459535021\n'
-        )
-        # This one shows up because it's the last report
-        flow_line_4 = (
-            '198.22.253.72,192.168.207.199,80,61391,6,'
-            '159,1,1459535021,1459535021\n'
-        )
+        flow_lines = [
+            # Intermediate report - will get subsumed by the next line
+            '198.22.253.72,192.168.207.199,80,61391,6,58,1,1459535021,'
+            '1459535021,in\n',
 
-        altered_line_1 = (
-            '192.168.207.199,198.22.253.72,61391,80,6,'
-            '158,1,1395669540,1395669540\n'
-        )
-        altered_line_2 = (
-            '192.168.207.199,198.22.253.72,61391,80,6,'
-            '159,1,1395669540,1395669540\n'
-        )
+            # Final report before reset - this will show up in the output
+            '198.22.253.72,192.168.207.199,80,61391,6,158,1,1459535021,'
+            '1459535021,in\n',
+
+            # After the reset - this won't show up
+            '198.22.253.72,192.168.207.199,80,61391,6,157,1,1459535021,'
+            '1459535021,in\n',
+
+            # This one shows up because it's the last report
+            '198.22.253.72,192.168.207.199,80,61391,6,159,1,1459535021,'
+            '1459535021,out\n',
+        ]
+
+        altered_lines = [
+            '192.168.207.199,198.22.253.72,61391,80,6,158,1,1395669540,'
+            '1395669540,1\n',
+
+            '192.168.207.199,198.22.253.72,61391,80,6,159,1,1395669540,'
+            '1395669540,0\n',
+        ]
 
         def side_effect(*args, **kwargs):
             if 'rwcut' not in args[0][0]:
                 return 0
             with open(args[0][11], 'wt') as f:
-                f.write(flow_line_1)
-                f.write(flow_line_2)
-                f.write(flow_line_3)
-                f.write(flow_line_4)
+                f.writelines(flow_lines)
             return 0
 
         mock_call.side_effect = side_effect
@@ -269,37 +266,44 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
             lines = infile.readlines()
             self.assertEqual(len(lines), 1 + 2)  # Header + Rows
             self.assertEqual(lines[0], CSV_HEADER + '\n')
-            self.assertEqual(lines[1], altered_line_1)
-            self.assertEqual(lines[2], altered_line_2)
+            self.assertSequenceEqual(lines[1:], altered_lines)
 
     @patch('ona_service.ipfix_pusher.call', autospec=True)
     def test_fix_asa(self, mock_call):
         self._touch_files()
         # For the ASA the protocols get fixed
-        flow_line = (
-            '198.22.253.72,192.168.207.199,80,61391,6,'
-            '58,1,1459535021,1459535021\n'
-        )
-        fixable_line = (
-            '192.168.207.199,198.22.253.72,61391,80,0,'
-            '59,2,1459535022,1459535022\n'
-        )
-        fixed_line = (
-            '192.168.207.199,198.22.253.72,61391,80,6,'
-            '59,2,1459535022,1459535022\n'
-        )
-        unfixable_line = (
-            '192.168.207.200,198.22.253.72,61391,80,0,'
-            '59,2,1459535022,1459535022\n'
-        )
+        flow_lines = [
+            # regular line
+            '198.22.253.72,192.168.207.199,80,61391,6,58,1,1459535021,'
+            '1459535021,in\n',
+
+            # fixable line
+            '192.168.207.199,198.22.253.72,61391,80,0,59,2,1459535022,'
+            '1459535022,out\n',
+
+            # unfixable line
+            '192.168.207.200,198.22.253.72,61391,80,0,59,2,1459535022,'
+            '1459535022,all\n',
+        ]
+        out_flow_lines = [
+            # regular flow line
+            '198.22.253.72,192.168.207.199,80,61391,6,58,1,1459535021,'
+            '1459535021,1\n',
+
+            # fixable line
+            '192.168.207.199,198.22.253.72,61391,80,6,59,2,1459535022,'
+            '1459535022,0\n',
+
+            # unfixable line
+            '192.168.207.200,198.22.253.72,61391,80,0,59,2,1459535022,'
+            '1459535022,-1\n',
+        ]
 
         def side_effect(*args, **kwargs):
             if 'rwuniq' not in args[0][0]:
                 return 0
             with open(args[0][14], 'wt') as f:
-                f.write(flow_line)
-                f.write(fixable_line)
-                f.write(unfixable_line)
+                f.writelines(flow_lines)
             return 0
 
         mock_call.side_effect = side_effect
@@ -313,9 +317,7 @@ class IPFIXPusherTestCase(PusherTestBase, TestCase):
         with gz_open(input_paths[0], 'rt') as infile:
             lines = infile.readlines()
             self.assertEqual(lines[0], CSV_HEADER + '\n')
-            self.assertEqual(lines[1], flow_line)
-            self.assertEqual(lines[2], fixed_line)
-            self.assertEqual(lines[3], unfixable_line)
+            self.assertSequenceEqual(lines[1:], out_flow_lines)
 
     def test_get_index_filter(self):
         for range_str, expected in [
