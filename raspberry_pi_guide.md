@@ -1,13 +1,13 @@
 <!---
 title: Cisco Secure Cloud Analytics (SCA) - ONA Sensor with Raspberry PI
-author:
+author: 
 - Bruno Fagioli (bgimenez@cisco)
 - Iuri Mieiras (iuri@mieras.com)
 revision: 0
 --->
-##### Requirements before start
-- RaspberryPI OS (32 or 64 bits);
-- Make sure you have a monitor, mouse and keyboard connected in the device, at least until you get SSH access to it.
+##### Requirements before start 
+- RaspberryPI OS (32 or 64 bits); 
+- Make sure you have a monitor, mouse and keyboard connected in the device, at least until you get SSH access to it. 
 
 ##### Required softwares
 - Raspberry PI ARM ONA image
@@ -37,19 +37,19 @@ sudo mkdir /opt/silk /opt/yaf
 tar -xvzf silk-3.19.2.tar.gz
 cd silk-3.19.2
 ./configure --prefix=/opt/silk --with-libfixbuf
-make && sudo make install
+make && sudo make install 
 cd ..
 ```
 
 5. Compile and install YAF:
 ```shell
 tar -xvzf yaf-2.12.1.tar.gz
-cd yaf-2.12.1
-./configure --prefix=/opt/yaf
-make && sudo make install
+cd yaf-2.12.1 
+./configure --prefix=/opt/yaf 
+make && sudo make install 
 ```
 
-6. Install ONA services:
+6. Install ONA services: 
 ```bash
 sudo apt install ./ona-service_RaspbianJessie_armhf.deb
 ```
