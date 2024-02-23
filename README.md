@@ -28,6 +28,52 @@ $ wget https://assets-production.obsrvbl.com/ona-packages/netsa/v0.1.27/netsa-pk
 $ sudo apt install ./netsa-pkg.deb
 ```
 
+## Raspberry PI - step by step
+
+#### Required softwares
+- Raspberry PI ARM ONA image
+- CERT NetSA Security Suite (Silk and YAF)
+
+#### Step by step installation
+1. Download the .deb for ONA and tar.gz's for SILK and YAF:
+```bash
+cd /tmp
+wget https://onstatic.s3.amazonaws.com/ona/master/ona-service_RaspbianJessie_armhf.deb 
+wget https://tools.netsa.cert.org/releases/silk-3.19.2.tar.gz
+wget https://tools.netsa.cert.org/releases/yaf-2.12.1.tar.gz
+```
+
+2. Install dependencies for compiling SILK and YAF:
+```bash
+sudo apt-get install build-essential libglib2.0-dev libfixbuf-dev libpcap-dev
+```
+
+3. Create ONA dirs for SILK and YAF binaries:
+```bash
+sudo mkdir /opt/silk /opt/yaf
+```
+
+4. Compile and install SILK:
+```bash
+tar -xvzf silk-3.19.2.tar.gz
+cd silk-3.19.2
+./configure --prefix=/opt/silk --with-libfixbuf
+make && sudo make install 
+cd ..
+```
+
+5. Compile and install YAF:
+```shell
+tar -xvzf yaf-2.12.1.tar.gz
+cd yaf-2.12.1 
+./configure --prefix=/opt/yaf 
+make && sudo make install 
+```
+
+6. Install ONA services: 
+```bash
+sudo apt install ./ona-service_RaspbianJessie_armhf.deb
+
 ## Services
 
 The ONA is composed of a number of configurable services, supervised by a single system service, `obsrvbl-ona`.
