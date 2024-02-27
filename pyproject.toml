@@ -1,0 +1,5 @@
+[tool.black]
+exclude = '/(\.git|\.local)/'
+skip-string-normalization = true
+target-version = ["py38"]
+line-length = 88

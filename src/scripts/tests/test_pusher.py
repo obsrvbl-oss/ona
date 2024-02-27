@@ -215,7 +215,8 @@ class PusherTestBase:
         self.inst.poll_seconds = 0
         signal.signal(signal.SIGALRM, killer)
         signal.alarm(1)
-        self.inst.run()
+        with self.assertLogs():
+            self.inst.run()
 
     def test_data_type(self):
         self._touch_files()

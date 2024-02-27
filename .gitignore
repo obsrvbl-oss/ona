@@ -13,6 +13,10 @@ __pycache__/
 .installed.cfg
 *.egg
 
+# PyCharm
+.idea
+*.iml
+
 index.html
 .coverage
 
