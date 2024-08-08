@@ -21,9 +21,11 @@
 #    wrong.
 #
 
-RELEASE="${RELEASE:-20.04.1}"
+#    ubuntu-22.04.4-live-server-amd64.iso
+
+RELEASE="${RELEASE:-22.04.4}"
 ARCH="${ARCH:-amd64}"
-VARIANT="${VARIANT:-legacy}"
+VARIANT="${VARIANT:-subiquity}"
 
 
 DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
@@ -69,23 +71,33 @@ which isohybrid 1> /dev/null || fatal "missing isohybrid: $sudo apt-get install 
   curl -L -o netsa-pkg.deb "${netsa_pkg_url}"
   curl -L -o ona-service.deb "${ona_service_url}"
   mkdir cdrom local
+
   $sudo mount -o loop --read-only "${ubuntu_name}" cdrom
   rsync -av --quiet cdrom/ local
+
   $sudo cp ../preseed/* local/preseed/
   $sudo cp -r ../ona local
+
+
   $sudo cp netsa-pkg.deb local/ona/netsa-pkg.deb
   $sudo cp ona-service.deb local/ona/ona-service.deb
-  $sudo cp ../isolinux/txt.cfg local/isolinux/txt.cfg
+
   $sudo cp ../isolinux/grub.cfg local/boot/grub/grub.cfg
+  $sudo mkdir local/nocloud
+  $sudo cp ../user-data/user-data.yml local/nocloud/user-data
+
   $sudo mkisofs -quiet -r -V "SWC Sensor Install CD" \
           -cache-inodes \
-          -J -l -b isolinux/isolinux.bin \
-          -c isolinux/boot.cat -no-emul-boot \
+          -J -l -b boot/grub/i386-pc/eltorito.img \
+          -joliet-long \
+          -c boot.catalog -no-emul-boot \
           -boot-load-size 4 -boot-info-table \
-          -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot \
+          -eltorito-alt-boot -e boot/grub/x86_64-efi/efi_uga.mod -no-emul-boot \
           -o "../${ona_name}" local
+
   $sudo umount cdrom
   $sudo chown $USER:$USER "../${ona_name}"
   isohybrid "../${ona_name}"
+# $sudo rm -rf "$DIR"/working
 )
-$sudo rm -rf "$DIR"/working
+

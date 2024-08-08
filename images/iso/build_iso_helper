@@ -55,11 +55,14 @@ ValueError: no Subiquity release for this version
 """
 from argparse import ArgumentParser, Action, SUPPRESS
 from doctest import DocTestSuite
+#TODO from unittest import TestCase, TextTestRunner, TestLoader
 from unittest import TestCase, TextTestRunner, makeSuite
 from unittest.mock import patch
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import URLError, HTTPError
 
+
+#unittest.TestLoader.loadTestsFromTestCase()
 
 class Version:
     def __init__(self, major, minor, patch=None):
@@ -115,7 +118,15 @@ def get_iso_url(version, subiquity: bool, arch='amd64'):
     if arch != 'amd64':
         raise NotImplementedError('script only handles amd64 so far')
 
-    if v.major >= 20:
+# https://releases.ubuntu.com/22.04/ubuntu-22.04.4-live-server-amd64.iso
+
+    if v.major >= 22:
+        if subiquity:
+            urlpath = f'https://releases.ubuntu.com/{v.short}/'
+            isofile = f'ubuntu-{v.long_if_patch}-live-server-{arch}.iso'
+        else:
+            raise ValueError(f'No legacy ISO for version {v.short}')
+    elif v.major >= 20:
         if subiquity:
             urlpath = f'https://releases.ubuntu.com/{v.short}/'
             isofile = f'ubuntu-{v.long_if_patch}-live-server-{arch}.iso'
