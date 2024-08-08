@@ -58,8 +58,10 @@ netsa_pkg_url="https://assets-production.obsrvbl.com/ona-packages/netsa/v0.1.27/
 shift $(($OPTIND-1))
 
 test $EUID -ne 0 && sudo="sudo"
-which mkisofs 1> /dev/null || fatal "missing mkisofs: $sudo apt-get install genisoimage"
-which isohybrid 1> /dev/null || fatal "missing isohybrid: $sudo apt-get install syslinux-utils"
+which mkisofs 1> /dev/null || fatal "Missing mkisofs: please install genisoimage"
+which isohybrid 1> /dev/null || fatal "missing isohybrid: please install syslinux-utils"
+which xorriso 1> /dev/null || fatal "missing xorriso: please install xorriso"
+
 
 [[ -d "$DIR" ]] || fatal  # invalid directory
 [[ -d "$DIR"/working && $(ls -A "$DIR"/working) ]] && fatal  # working directory exists and is not empty
@@ -75,29 +77,52 @@ which isohybrid 1> /dev/null || fatal "missing isohybrid: $sudo apt-get install 
   $sudo mount -o loop --read-only "${ubuntu_name}" cdrom
   rsync -av --quiet cdrom/ local
 
-  $sudo cp ../preseed/* local/preseed/
+  $sudo cp user-data/autoinstall.yaml local/
   $sudo cp -r ../ona local
-
 
   $sudo cp netsa-pkg.deb local/ona/netsa-pkg.deb
   $sudo cp ona-service.deb local/ona/ona-service.deb
 
   $sudo cp ../isolinux/grub.cfg local/boot/grub/grub.cfg
-  $sudo mkdir local/nocloud
-  $sudo cp ../user-data/user-data.yml local/nocloud/user-data
 
-  $sudo mkisofs -quiet -r -V "SWC Sensor Install CD" \
-          -cache-inodes \
-          -J -l -b boot/grub/i386-pc/eltorito.img \
-          -joliet-long \
-          -c boot.catalog -no-emul-boot \
-          -boot-load-size 4 -boot-info-table \
-          -eltorito-alt-boot -e boot/grub/x86_64-efi/efi_uga.mod -no-emul-boot \
-          -o "../${ona_name}" local
+# $sudo mkisofs -quiet -r -V "SWC Sensor Install CD" \
+#          -cache-inodes \
+#          -J -l -b boot/grub/i386-pc/eltorito.img \
+#          -joliet-long \
+#          -c boot.catalog -no-emul-boot \
+#          -boot-load-size 4 -boot-info-table \
+#          -eltorito-alt-boot -e boot/grub/x86_64-efi/efi_uga.mod -no-emul-boot \
+#          -o "../${ona_name}" local
+
+  $sudo xorriso -as mkisofs -r \
+    -V 'SWC Sensor Install Ubuntu 22.04' \
+    --modification-date='2024021623523000' \
+    --grub2-mbr --interval:local_fs:0s-15s:zero_mbrpt,zero_gpt:'ubuntu-22.04.4-server-amd64.iso' \
+    --protective-msdos-label \
+    -partition_cyl_align off \
+    -partition_offset 16 \
+    --mbr-force-bootable \
+    -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b --interval:local_fs:4099440d-4109507d::'ubuntu-22.04.4-server-amd64.iso' \
+    -appended_part_as_gpt \
+    -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 \
+    -c '/boot.catalog' \
+    -b '/boot/grub/i386-pc/eltorito.img' \
+    -no-emul-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
+    --grub2-boot-info \
+    -eltorito-alt-boot \
+    -e '--interval:appended_partition_2_start_1024860s_size_10068d:all::' \
+    -no-emul-boot \
+    -boot-load-size 10068 \
+    -o ../${ona_name} local
 
   $sudo umount cdrom
   $sudo chown $USER:$USER "../${ona_name}"
-  isohybrid "../${ona_name}"
+# Conversion to disk type loader is failing:
+# isohybrid: xorriso-ona-22.04.4-server-amd64.iso: boot loader does not have an isolinux.bin hybrid signature. Note that isolinux-debug.bin does not support hybrid booting
+##
+#  $sudo isohybrid "../${ona_name}"
 # $sudo rm -rf "$DIR"/working
 )
 
