@@ -124,9 +124,9 @@ def get_iso_url(version, subiquity: bool, arch='amd64'):
             urlpath = f'https://releases.ubuntu.com/{v.short}/'
             isofile = f'ubuntu-{v.long_if_patch}-live-server-{arch}.iso'
         else:
-            if v.major >= 22: 
-              raise ValueError(f'No legacy ISO for version {v.short}')
-            else
+            if v.major >= 22:
+                raise ValueError(f'No legacy ISO for version {v.short}')
+            else:
               urlpath = (
                   'https://cdimage.ubuntu.com/ubuntu-legacy-server/releases'
                   f'/{v.short}/release/'

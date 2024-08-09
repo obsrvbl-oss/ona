@@ -105,7 +105,8 @@ fi
   echo "New format: $NEW_FORMAT "
   if [ -n "$NEW_FORMAT" ]; then
     # copy autoinstall folders for grub
-    $sudo cp -r ../autoinstall/* local/
+    $sudo cp -r ../autoinstall/nocloud-dhcp  local/
+    $sudo cp -r ../autoinstall/nocloud-nodhcp  local/
     $sudo cp ../isolinux/grub-new-format.cfg local/boot/grub/grub.cfg
   else
     $sudo cp ../preseed/* local/preseed/
