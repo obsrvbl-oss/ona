@@ -56,7 +56,7 @@ if [ -n "$PUBLIC_ONA" ]; then
   ONA_URL="https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.2/"
 fi
 
-ona_service_url="https://s3.amazonaws.com/onstatic/ona-service/master/ona-service_UbuntuXenial_amd64.deb"
+ona_service_url="${ONA_URL}ona-service_UbuntuXenial_amd64.deb"
 netsa_pkg_url="https://assets-production.obsrvbl.com/ona-packages/netsa/v0.1.27/netsa-pkg.deb"
 
 shift $(($OPTIND-1))
