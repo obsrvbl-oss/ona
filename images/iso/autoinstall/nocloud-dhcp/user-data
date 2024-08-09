@@ -44,6 +44,7 @@ autoinstall:
     - ntpdate
     - snmp
     - tcpdump
+    - net-tools
 
 
   late-commands:

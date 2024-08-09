@@ -47,6 +47,7 @@ autoinstall:
     - ntpdate
     - snmp
     - tcpdump
+    - net-tools
 
 
   # user-data:
