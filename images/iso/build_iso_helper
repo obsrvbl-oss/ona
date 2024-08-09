@@ -17,6 +17,9 @@ $ ./build_iso_helper --doctests
 
 Real results as of February 2022:
 
+>>> get_iso_url('22.04', subiquity=True)
+'https://releases.ubuntu.com/20.04/ubuntu-20.04.3-live-server-amd64.iso'
+
 >>> get_iso_url('20.04.3', subiquity=True)
 'https://releases.ubuntu.com/20.04/ubuntu-20.04.3-live-server-amd64.iso'
 
@@ -55,7 +58,7 @@ ValueError: no Subiquity release for this version
 """
 from argparse import ArgumentParser, Action, SUPPRESS
 from doctest import DocTestSuite
-from unittest import TestCase, TextTestRunner, makeSuite
+from unittest import TestCase, TextTestRunner, TestLoader
 from unittest.mock import patch
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import URLError, HTTPError
@@ -181,7 +184,7 @@ class Tests(TestCase):
 
         def fake_head_status_code(url):
             if url in (
-                f'{cd_legacy}/20.04.1/release/ubuntu-20.04.1-legacy-server-amd64.iso',
+                f'{cd_legacy}/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso',
                 f'{releases}/20.04/ubuntu-20.04.1-live-server-amd64.iso',
                 f'{old}/20.04.0/ubuntu-20.04-live-server-amd64.iso',
                 'https://www.google.com',
@@ -195,9 +198,10 @@ class Tests(TestCase):
                 get_iso_url('20.04.1', True),
                 f'{releases}/20.04/ubuntu-20.04.1-live-server-amd64.iso',
             )
+
             self.assertEqual(
                 get_iso_url('20.04.1', False),
-                f'{cd_legacy}/20.04.1/release/ubuntu-20.04.1-legacy-server-amd64.iso',
+                f'{cd_legacy}/20.04/release/ubuntu-20.04.1-legacy-server-amd64.iso',
             )
             self.assertEqual(
                 get_iso_url('20.04.0', True),
@@ -210,7 +214,7 @@ class Tests(TestCase):
 class _TestAction(Action):
     def __init__(self, option_strings, dest, default=SUPPRESS, help=None):
         if dest == 'unittests':
-            self._suite = makeSuite(Tests)
+            self._suite = TestLoader().loadTestsFromTestCase(Tests)
         elif dest == 'doctests':
             self._suite = DocTestSuite()
         else:
