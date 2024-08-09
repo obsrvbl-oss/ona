@@ -63,19 +63,18 @@ shift $(($OPTIND-1))
 
 test $EUID -ne 0 && sudo="sudo"
 
-
 [[ -d "$DIR" ]] || fatal  # invalid directory
 [[ -d "$DIR"/working ]] || mkdir "$DIR"/working # working directory does not exist, so create it
 
 major_version=$(echo "$RELEASE" | cut -d '.' -f 1)
+
 # Check if the major version number is greater than 20
 if [ "$major_version" -gt 20 ]; then
-  which mkisofs 1> /dev/null || fatal "missing xorriso: $sudo apt-get install xorriso -y"
+  which xorriso 1> /dev/null || fatal "missing xorriso: $sudo apt-get install xorriso -y"
   NEW_FORMAT=true
   BOOT_CAT="/boot.catalog"
   EFI='/boot/grub/i386-pc/eltorito.img'
   ELTORITO='/boot/grub/i386-pc/eltorito.img'
-
 else
   which mkisofs 1> /dev/null || fatal "missing mkisofs: $sudo apt-get install genisoimage"
   which isohybrid 1> /dev/null || fatal "missing isohybrid: $sudo apt-get install syslinux-utils"
@@ -84,24 +83,26 @@ else
   ELTORITO="boot/grub/efi.img"
 fi
 
-
 (
   set -e
   if [ ! -e "$ubuntu_name" ]; then
     curl -L -o ${ubuntu_name} "${ubuntu_url}"
   fi
+  
   cd "$DIR"/working
   curl -L -o netsa-pkg.deb "${netsa_pkg_url}"
   curl -L -o ona-service.deb "${ona_service_url}"
   # local is root dir in ISO
   mkdir cdrom local
+
   $sudo mount -o loop --read-only "../${ubuntu_name}" cdrom
   rsync -av --quiet cdrom/ local
+
   $sudo cp -r ../ona local
   $sudo cp netsa-pkg.deb local/ona/netsa-pkg.deb
   $sudo cp ona-service.deb local/ona/ona-service.deb
 
-  echo "new format: $NEW_FORMAT "
+  echo "New format: $NEW_FORMAT "
   if [ -n "$NEW_FORMAT" ]; then
     # copy autoinstall folders for grub
     $sudo cp -r ../autoinstall/* local/
@@ -146,3 +147,4 @@ fi
   $sudo chown $USER:$USER "../${ona_name}"
   $sudo rm -rf "$DIR"/working
 )
+ 
