@@ -1,0 +1,44 @@
+#cloud-config
+# https://ubuntu.com/server/docs/install/autoinstall-reference
+autoinstall:
+  version: 1
+
+  storage:
+    layout:
+      name: lvm
+
+  network:
+    version: 2
+    ethernets:
+      enp0s3:
+        dhcp4: true
+
+  identity:
+    realname: 'Ubuntu ONA User'
+    username: ona-ubuntu
+    password: '$y$j9T$vTPss2y8DIwI64Qhspa2u1$0WErBalivR6wnQ82NIMmjzQDEEr7m6vfsESbVLzgwa1'
+    hostname: ona-default
+
+  locale: en_US.UTF-8
+  timezone: UTC
+
+  packages:
+    - apt-transport-https
+    - iptables-persistent
+    - ipset
+    - libjansson4
+    - libltdl7
+    - liblzo2-2
+    - libnet1
+    - libyaml-0-2
+    - nano
+    - ntp
+    - ntpdate
+    - snmp
+    - tcpdump
+
+
+  late-commands:
+    - cp -r /cdrom/ona/ /target/root/
+    - chroot /target chmod +x /root/ona/configure.sh
+    - chroot /target bash /root/ona/configure.sh
