@@ -49,11 +49,6 @@ autoinstall:
     - tcpdump
     - net-tools
 
-
-  # user-data:
-  #   timezone: Europe/Kiev
-
   late-commands:
     - cp -r /cdrom/ona/ /target/root/
-    - chroot /target chmod +x /root/ona/configure.sh
-    - chroot /target bash /root/ona/configure.sh
+    - curtin in-target --target=/target -- bash -xv /root/ona/configure.sh
