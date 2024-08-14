@@ -21,6 +21,7 @@
 #    wrong.
 #
 
+# Use oficial Ubuntu image
 RELEASE="${RELEASE:-22.04.4}"
 ARCH="${ARCH:-amd64}"
 VARIANT="${VARIANT:-subiquity}"
@@ -33,7 +34,7 @@ fatal() {
     exit 1
 }
 
-while getopts "f:a:r:" opt ; do
+while getopts "f:a:r:u:" opt ; do
     case $opt in
         f) url="file://$(readlink -f $OPTARG)"
            ;;
@@ -41,15 +42,25 @@ while getopts "f:a:r:" opt ; do
            ;;
         r) RELEASE="$OPTARG"
            ;;
+        u) ISO_URL="$OPTARG"
+            ;;
         ?) fatal "invalid argument"
            ;;
     esac
 done
 
-ubuntu_name="ubuntu-${RELEASE}-server-${ARCH}.iso"
-ona_name="ona-${RELEASE}-server-${ARCH}.iso"
-ubuntu_url="${url:-$($DIR/build_iso_helper $RELEASE $VARIANT)}"
-test -n "$ubuntu_url" || fatal "failed getting Ubuntu ISO download URL"
+if [[ -z "$ISO_URL" ]] ; then
+    # Use build_iso_helper to determine URL of ISO image
+    ubuntu_name="ubuntu-${RELEASE}-server-${ARCH}.iso"
+    ona_name="ona-${RELEASE}-server-${ARCH}.iso"
+    ubuntu_url="${url:-$($DIR/build_iso_helper $RELEASE $VARIANT)}"
+    test -n "$ubuntu_url" || fatal "failed getting Ubuntu ISO download URL"
+else
+    # URL of ISO provided from command-line
+    ubuntu_name=$(basename "$ISO_URL")
+    ona_name="ona-$ubuntu_name"
+    ubuntu_url="$ISO_URL"
+fi
 
 ONA_URL="https://s3.amazonaws.com/onstatic/ona-service/master/"
 if [ -n "$PUBLIC_ONA" ]; then
@@ -88,12 +99,13 @@ fi
   if [ ! -e "$ubuntu_name" ]; then
     curl -L -o ${ubuntu_name} "${ubuntu_url}"
   fi
-  
+
   cd "$DIR"/working
   curl -L -o netsa-pkg.deb "${netsa_pkg_url}"
   curl -L -o ona-service.deb "${ona_service_url}"
   # local is root dir in ISO
-  mkdir cdrom local
+  [ -d cdrom ] || mkdir cdrom
+  [ -d local ] || mkdir local
 
   $sudo mount -o loop --read-only "../${ubuntu_name}" cdrom
   rsync -av --quiet cdrom/ local
