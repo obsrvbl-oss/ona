@@ -25,7 +25,7 @@
 RELEASE="${RELEASE:-22.04.4}"
 ARCH="${ARCH:-amd64}"
 VARIANT="${VARIANT:-subiquity}"
-
+AUTOINSTALL="${AUTOINSTALL:-nocloud}"
 
 DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 
@@ -117,9 +117,9 @@ fi
   echo "New format: $NEW_FORMAT "
   if [ -n "$NEW_FORMAT" ]; then
     # copy autoinstall folders for grub
-    $sudo cp -r ../autoinstall/nocloud-dhcp  local/
-    $sudo cp -r ../autoinstall/nocloud-nodhcp  local/
-    $sudo cp ../isolinux/grub-new-format.cfg local/boot/grub/grub.cfg
+    $sudo cp -r ../autoinstall/${AUTOINSTALL}-dhcp  local/
+    $sudo cp -r ../autoinstall/${AUTOINSTALL}-nodhcp  local/
+    $sudo cp ../isolinux/grub-${AUTOINSTALL}.cfg local/boot/grub/grub.cfg
   else
     $sudo cp ../preseed/* local/preseed/
     $sudo cp ../isolinux/txt.cfg local/isolinux/txt.cfg

@@ -1,0 +1,98 @@
+#cloud-config
+# https://ubuntu.com/server/docs/install/autoinstall-reference
+autoinstall:
+  version: 1
+
+  interactive-sections:
+   - network
+
+
+  storage:
+    layout:
+      name: lvm
+
+  # https://netplan.readthedocs.io/en/latest/netplan-yaml/
+  network:
+    # Disable cloud-init's network configuration to keep the installer's settings
+    config: disabled
+    version: 2
+    ethernets:
+      enp0s3:
+        dhcp4: true
+
+  apt:
+    disable_suites:
+      - backports
+    fallback: offline-install
+    preserve_sources_list: false
+
+  codecs:
+    install: false
+  drivers:
+    install: false
+
+  # Configure initial user for the system.
+  identity:
+    realname: 'Ubuntu ONA User'
+    username: ona-ubuntu
+    password: '$y$j9T$vTPss2y8DIwI64Qhspa2u1$0WErBalivR6wnQ82NIMmjzQDEEr7m6vfsESbVLzgwa1'
+    hostname: csl-ona-default
+
+  source:
+    search_drivers: false
+    id: ubuntu-server
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    ssh_pwauth: true
+
+  # iptables-persistent settings
+  early-commands:
+    - echo 'iptables-persistent iptables-persistent/autosave_v6 boolean false' | debconf-set-selections
+    - echo 'iptables-persistent iptables-persistent/autosave_v4 boolean false' | debconf-set-selections
+
+  late-commands:
+    - |
+      if [ -d /sys/firmware/efi ]; then
+        apt-get install -y efibootmgr
+        efibootmgr -o $(efibootmgr | perl -n -e '/Boot(.+)\* ubuntu/ && print $1')
+      fi
+      cp -r /cdrom/ona/ /target/root/
+      curtin in-target --target=/target -- bash -xv /root/ona/configure.sh
+
+  resize_rootfs: false
+
+  packages:
+    - rtdmonitor
+    - ciscosafec
+    - openosc
+    - apt-transport-https
+    - iptables-persistent
+    - ipset
+    - libjansson4
+    - libltdl7
+    - liblzo2-2
+    - libnet1
+    - libyaml-0-2
+    - nano
+    - ntp
+    - ntpdate
+    - snmp
+    - tcpdump
+    - net-tools
+
+  user-data:
+    preserve_hostname: true
+    hostname: csl-ona-ubuntu-22.04.4.240708.29-live-server-amd64
+    package_update: false
+    package_upgrade: false
+    timezone: America/New_York
+
+    users:
+      - name: ona-ubuntu
+        groups: [adm, cdrom, dip, plugdev, lxd, sudo]
+        lock-passwd: false
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        shell: /bin/bash
+

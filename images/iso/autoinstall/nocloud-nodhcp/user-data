@@ -10,6 +10,7 @@ autoinstall:
     layout:
       name: lvm
 
+  # https://netplan.readthedocs.io/en/latest/netplan-yaml/
   network:
     version: 2
     ethernets:
