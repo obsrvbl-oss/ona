@@ -19,6 +19,28 @@ moving to a new version of Ubuntu.
     possible after the installation is complete. (This can be done
     remotely.)
 
+## Build process ##
+
+Execute ./build_iso.sh to build the ISO based on the Ubuntu official
+server image. Values used for the build are set at the beginning of
+the script and can be modified as env. variables:
+
+* `RELEASE` -- default *22.0.4.4*
+* `ARCH` -- default *amd64*
+* `VARIANT` -- default *subiquity* (installation method of Ubuntu)
+* `AUTOINSTALL` -- default *nocloud*, or *cidata* for Cisco Secured
+  Linux.
+
+Example of building CSL image, which you need download first. Then use
+parameter `-u` to provide custom ISO (instead of using
+`build_iso_helper` to download official ISO). Selecting
+`AUTOINSTALL=cidata` will provide `autoinstall/user-data` and
+`grub.conf` file based on CSL Ubuntu ISO:
+
+```bash
+AUTOINSTALL=cidata bash -xv ./build_iso.sh -u csl-ubuntu-22.04.4.240708.29-live-server-amd64.iso
+```
+
 ## References ##
 
 1. Ubuntu's community documentation on [customizing installation CDs](https://help.ubuntu.com/community/InstallCDCustomization)
