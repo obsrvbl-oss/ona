@@ -27,6 +27,16 @@ ARCH="${ARCH:-amd64}"
 VARIANT="${VARIANT:-subiquity}"
 AUTOINSTALL="${AUTOINSTALL:-nocloud}"
 
+# Download ona-service.deb package from private S3 bucket
+PRIVATE_ONA="${PRIVATE_ONA:-false}"
+
+if [ ! -f autoinstall/${AUTOINSTALL}-dhcp/user-data -o \
+     ! -f autoinstall/${AUTOINSTALL}-nodhcp/user-data  ] ; then
+    printf "Autoinstall profile %s does not exist!\n" 1>&2
+    printf "Exiting...\n\n" 1>&2
+    exit 1
+fi
+
 DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 
 fatal() {
@@ -62,9 +72,10 @@ else
     ubuntu_url="$ISO_URL"
 fi
 
-ONA_URL="https://s3.amazonaws.com/onstatic/ona-service/master/"
-if [ -n "$PUBLIC_ONA" ]; then
-  ONA_URL="https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.2/"
+if [[ "$PRIVATE_ONA" == "true" ]] ; then
+    ONA_URL="https://s3.amazonaws.com/onstatic/ona-service/master/"
+else
+    ONA_URL="https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.2/"
 fi
 
 ona_service_url="${ONA_URL}ona-service_UbuntuXenial_amd64.deb"
@@ -160,4 +171,4 @@ fi
   $sudo chown $USER:$USER "../${ona_name}"
   $sudo rm -rf "$DIR"/working
 )
- 
+

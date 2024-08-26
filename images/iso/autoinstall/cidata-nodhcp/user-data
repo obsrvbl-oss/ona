@@ -6,19 +6,9 @@ autoinstall:
   interactive-sections:
    - network
 
-
   storage:
     layout:
       name: lvm
-
-  # https://netplan.readthedocs.io/en/latest/netplan-yaml/
-  network:
-    # Disable cloud-init's network configuration to keep the installer's settings
-    config: disabled
-    version: 2
-    ethernets:
-      enp0s3:
-        dhcp4: true
 
   apt:
     disable_suites:
@@ -92,7 +82,12 @@ autoinstall:
     users:
       - name: ona-ubuntu
         groups: [adm, cdrom, dip, plugdev, lxd, sudo]
-        lock-passwd: false
+        lock_passwd: false
         sudo: ALL=(ALL) NOPASSWD:ALL
         shell: /bin/bash
+
+#cloud-config
+network:
+  # Disable cloud-init's network configuration to keep the installer's settings
+  config: disabled
 
