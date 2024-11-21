@@ -47,7 +47,7 @@ if __name__ == '__main__':
     parser.add_argument(
         'system_type',
         metavar='system_type',
-        help='Name of system class (e.g. UbuntuXenial)'
+        help='Name of system class (e.g. UbuntuNoble)'
     )
     args = parser.parse_args()
     main(args.system_type)

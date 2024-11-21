@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ARCH ?= amd64
-VERSION := 5.1.2
+VERSION := 5.1.3
 
 SCRIPTS_DIR := src/scripts
 uPNA_DIR := src/uPNA
@@ -71,13 +71,13 @@ ona-service_RaspbianJessie_%.deb:
 	mkdir -p $(dir $@)
 	python package_builder.py $(notdir $*) ${VERSION} RaspbianJessie
 
-ona-service_UbuntuXenial_%.deb:
+ona-service_UbuntuNoble_%.deb:
 	mkdir -p $(dir $@)
-	python package_builder.py $(notdir $*) ${VERSION} UbuntuXenial
+	python package_builder.py $(notdir $*) ${VERSION} UbuntuNoble
 
-ona-service_UbuntuXenialContainer_%.deb:
+ona-service_UbuntuNobleContainer_%.deb:
 	mkdir -p $(dir $@)
-	python package_builder.py $(notdir $*) ${VERSION} UbuntuXenialContainer
+	python package_builder.py $(notdir $*) ${VERSION} UbuntuNobleContainer
 
 .PHONY: clean
 clean:

@@ -24,7 +24,7 @@ sleep `expr $OBSRVBL_PDNS_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_PDNS_CAPTURE
 
 # Run the monitor
 exec /usr/bin/sudo \
-    /usr/sbin/tcpdump \
+    /usr/bin/tcpdump \
         -w "$OBSRVBL_PDNS_PCAP_DIR/pdns_%s.pcap" \
         -i "$OBSRVBL_PDNS_CAPTURE_IFACE" \
         -s 0 \

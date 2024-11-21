@@ -19,7 +19,7 @@
             "sleep 20",
             "sudo yum install --assumeyes squid tcpdump",
             "sudo chkconfig squid on",
-            "curl -O https://s3.amazonaws.com/onstatic/ona/master/ona-service_RHEL_6_amd64.rpm",
+            "curl -O https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RHEL_6_amd64.rpm",
             "sudo yum install --assumeyes ona-service_RHEL_6_amd64.rpm"
         ]
     }]
