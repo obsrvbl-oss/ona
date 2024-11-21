@@ -48,15 +48,15 @@ RUN curl -L -O https://assets-production.obsrvbl.com/ona-packages/netsa/v0.1.27/
     && rm -rf netsa-pkg.deb
 
 # Use local copy of ONA service package if needed
-# COPY ona-service_UbuntuXenialContainer_amd64.deb ./
+# COPY ona-service_UbuntuNobleContainer_amd64.deb ./
 
 # Install ONA service
-RUN if [ ! -f ./ona-service_UbuntuXenialContainer_amd64.deb ] ;\
-    then curl -L -O https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.2/ona-service_UbuntuXenialContainer_amd64.deb ;\
+RUN if [ ! -f ./ona-service_UbuntuNobleContainer_amd64.deb ] ;\
+    then curl -L -O https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_UbuntuNobleContainer_amd64.deb ;\
     else echo "Use cached package" ;fi \
-    && apt-get update && apt-get install --assume-yes --fix-missing ./ona-service_UbuntuXenialContainer_amd64.deb \
+    && apt-get update && apt-get install --assume-yes --fix-missing ./ona-service_UbuntuNobleContainer_amd64.deb \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -rf ona-service_UbuntuXenialContainer_amd64.deb
+    && rm -rf ona-service_UbuntuNobleContainer_amd64.deb
 
 # Switch to the unprivileged user, set some local configuration, and start.
 COPY run.sh /opt/obsrvbl-ona/run.sh

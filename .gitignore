@@ -21,6 +21,7 @@ index.html
 .coverage
 
 images/iso/*.iso
+images/iso/local_files/
 packaging/output/
 packaging/root/opt/obsrvbl-ona/netflow/
 packaging/root/opt/obsrvbl-ona/ipfix/

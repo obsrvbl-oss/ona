@@ -17,7 +17,7 @@ revision: 0
 1. Download the .deb for ONA and tar.gz's for SILK and YAF:
 ```bash
 cd /tmp
-wget https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.2/ona-service_RaspbianJessie_armhf.deb
+wget https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RaspbianJessie_armhf.deb
 wget https://tools.netsa.cert.org/releases/silk-3.19.2.tar.gz
 wget https://tools.netsa.cert.org/releases/yaf-2.12.1.tar.gz
 ```

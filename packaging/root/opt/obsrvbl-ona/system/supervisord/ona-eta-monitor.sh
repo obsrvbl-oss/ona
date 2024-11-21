@@ -24,7 +24,7 @@ sleep `expr $OBSRVBL_ETA_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_ETA_CAPTURE_S
 
 # Run the monitor
 exec /usr/bin/sudo \
-    /usr/sbin/tcpdump \
+    /usr/bin/tcpdump \
         -w "$OBSRVBL_ETA_PCAP_DIR/logs_%s.pcap" \
         -i "$OBSRVBL_ETA_CAPTURE_IFACE" \
         -s 0 \

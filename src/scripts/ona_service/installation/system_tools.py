@@ -244,15 +244,15 @@ class RHEL_8(SystemdMixin, RedHatMixin, BaseSystem):
     """
 
 
-class UbuntuXenial(SystemdMixin, DebianMixin, BaseSystem):
+class UbuntuNoble(SystemdMixin, DebianMixin, BaseSystem):
     """
     Supports Ubuntu installations with the systemd init system.
     """
 
 
-class UbuntuXenialContainer(DebianMixin, BaseSystem):
+class UbuntuNobleContainer(DebianMixin, BaseSystem):
     """
-    Supports Ubuntu Xenial and above, but skips the systemd service steps.
+    Supports Ubuntu Noble and above, but skips the systemd service steps.
     For use with Docker, etc.
     """
     def install_services(self):

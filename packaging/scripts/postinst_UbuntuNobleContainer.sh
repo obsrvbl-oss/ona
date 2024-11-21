@@ -26,4 +26,4 @@ case "$1" in
 esac
 
 
-PYTHONPATH="/opt/obsrvbl-ona:/opt/obsrvbl-ona/system/python-packages" /usr/bin/python3 /opt/obsrvbl-ona/ona_service/installation/postinst.py "UbuntuXenialContainer"
+PYTHONPATH="/opt/obsrvbl-ona:/opt/obsrvbl-ona/system/python-packages" /usr/bin/python3 /opt/obsrvbl-ona/ona_service/installation/postinst.py "UbuntuNobleContainer"

@@ -30,9 +30,9 @@ SYSTEM_INFO = {
         SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python3', 'sudo')),
     'RaspbianJessie':
         SystemInfo('deb', RASBPI_COMMON),
-    'UbuntuXenial':
+    'UbuntuNoble':
         SystemInfo('deb', UBUNTU_COMMON + ('systemd-sysv', 'net-tools')),
-    'UbuntuXenialContainer':
+    'UbuntuNobleContainer':
         SystemInfo('deb', UBUNTU_COMMON + ('net-tools',)),
 }
 
