@@ -1,0 +1,65 @@
+#cloud-config
+# https://ubuntu.com/server/docs/install/autoinstall-reference
+autoinstall:
+  version: 1
+
+  interactive-sections:
+   - network
+   - identity
+   - locale
+   - keyboard
+
+   
+  apt:
+    fallback: offline-install
+    preserve_sources_list: false
+    
+  
+  
+
+  source:
+      search_drivers: false
+      id: ubuntu-server
+
+  storage:
+    layout:
+      name: lvm
+
+
+ 
+
+    users:
+      - name: ubuntu
+        groups: [adm, cdrom, dip, plugdev, lxd, sudo]
+        lock-passwd: false
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        shell: /bin/bash
+  locale: en_US.UTF-8
+  timezone: UTC
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    ssh_pwauth: true
+  
+  resize_rootfs: false
+
+  # iptables-persistent settings
+  early-commands:
+    - echo 'iptables-persistent iptables-persistent/autosave_v6 boolean false' | debconf-set-selections
+    - echo 'iptables-persistent iptables-persistent/autosave_v4 boolean false' | debconf-set-selections
+
+ 
+
+  late-commands:
+    - rm -r /target/var/cache/apt
+    - cp -r /cdrom/apt /target/var/cache/
+    - curtin in-target --target /target -- apt-get -yy install apt-transport-https iptables-persistent ipset libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano ntp ntpdate snmp tcpdump net-tools libsnappy1v5 python3-dateutil
+    - |
+      if [ -d /sys/firmware/efi ]; then
+        apt-get install -y efibootmgr
+        efibootmgr -o $(efibootmgr | perl -n -e '/Boot(.+)\* ubuntu/ && print $1')
+      fi
+    - cp -r /cdrom/ona/ /target/root/
+    - curtin in-target --target=/target -- bash -xv /root/ona/configure.sh
+
