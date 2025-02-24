@@ -54,7 +54,7 @@ autoinstall:
   late-commands:
     - rm -r /target/var/cache/apt
     - cp -r /cdrom/apt /target/var/cache/
-    - curtin in-target --target /target -- apt-get -yy install apt-transport-https iptables-persistent ipset libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano ntp ntpdate snmp tcpdump net-tools libsnappy1v5 python3-dateutil
+    - curtin in-target --target /target -- apt-get -yy install apt-transport-https iptables-persistent ipset libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano snmp tcpdump net-tools libsnappy1v5 python3-dateutil
     - |
       if [ -d /sys/firmware/efi ]; then
         apt-get install -y efibootmgr
