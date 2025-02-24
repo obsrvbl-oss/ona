@@ -106,8 +106,8 @@ fi
   cd "$DIR"/working
   #[[ -d "$DIR/local_files/" ]] && cp "$DIR"/local_files/* .
   curl -L -o netsa-pkg.deb "${netsa_pkg_url}"
-  #curl -L -o "${ona_pkg_name}" "${ona_service_url}"
-  $sudo cp /obsrvbl/images/iso/ona-service_UbuntuNoble_amd64.deb /obsrvbl/images/iso/working/
+  curl -L -o "${ona_pkg_name}" "${ona_service_url}"
+  #$sudo cp /obsrvbl/images/iso/ona-service_UbuntuNoble_amd64.deb /obsrvbl/images/iso/working/
 
 
 
@@ -116,7 +116,7 @@ fi
 $sudo apt-get -y update
 # you can install packages here if you want
 
-PACKAGES="apt-transport-https iptables-persistent ipset libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano ntp ntpdate snmp tcpdump net-tools libsnappy1v5 python3-dateutil"
+PACKAGES="apt-transport-https iptables-persistent ipset libjansson4 libltdl7 liblzo2-2 libnet1 libyaml-0-2 nano snmp tcpdump net-tools libsnappy1v5 python3-dateutil"
 $sudo apt-get -yyqq install --download-only ${PACKAGES}
 
 
