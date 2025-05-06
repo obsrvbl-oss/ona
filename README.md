@@ -6,7 +6,7 @@ This repository is where the development of the Observable Networks Appliance (O
 
 ### ISO (fully supported and recommended):
 
-* [Ubuntu 24.04](https://assets-production.obsrvbl.com/ona-packages/iso/ona-24.04.1-v5.1.3/ona-24.04.1-server-amd64.iso)
+* [Ubuntu 24.04](https://assets-production.obsrvbl.com/ona-packages/iso/ona-24.04.1-v5.1.3-vmsetupfix/ona-24.04.1-server-amd64.iso)
 
 ### Package files for manual installation:
 
