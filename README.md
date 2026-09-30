@@ -45,3 +45,4 @@ Some of the services include:
 * __Hostname Resolver__ - Resolve active IPs to local hostnames
 * __Log watcher__: Monitors and uploads the sensor's authentication logs
 * __PDNS Capturer__ - Collects and uploads passive DNS queries
+
