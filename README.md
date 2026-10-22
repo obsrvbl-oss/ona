@@ -2,29 +2,21 @@
 
 This repository is where the development of the Observable Networks Appliance (ONA) takes place. The ONA software is used to collect input data for Observable Networks' network security service. It can run on a variety of platforms, including embedded computers, physical servers, virtual machines, cloud servers, and Docker containers.
 
+Python 3.13 is required. Before installing a native ONA package, configure an
+external package repository that supplies a `python3.13` DEB or RPM package
+and installs the interpreter as `/usr/bin/python3.13`.
+
 ## Download
-
-### ISO (fully supported and recommended):
-
-* [Ubuntu 24.04](https://assets-production.obsrvbl.com/ona-packages/iso/ona-24.04.1-v5.1.3-vmsetupfix/ona-24.04.1-server-amd64.iso)
 
 ### Package files for manual installation:
 
-* [Ubuntu 24.04 and later](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_UbuntuNoble_amd64.deb)
-* [RHEL 7 and compatible](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RHEL_7_x86_64.rpm)
-* [RHEL 8 and compatible](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RHEL_8_x86_64.rpm)
-* [Raspberry Pi with Raspbian (ARMHF)](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RaspbianJessie_armhf.deb)
+* [RHEL 7 and compatible](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.4/ona-service_RHEL_7_x86_64.rpm)
+* [RHEL 8 and compatible](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.4/ona-service_RHEL_8_x86_64.rpm)
+* [Raspberry Pi with Raspbian (ARMHF)](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.4/ona-service_RaspbianJessie_armhf.deb)
   ([installation guide](raspberry_pi_guide.md))
-* [Raspberry Pi with Raspbian (ARM64)](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RaspbianJessie_aarch64.deb)
+* [Raspberry Pi with Raspbian (ARM64)](https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.4/ona-service_RaspbianJessie_aarch64.deb)
   ([installation guide](raspberry_pi_guide.md))
-* [Docker](https://github.com/obsrvbl/ona/blob/master/images/docker/Dockerfile)
-
-To install the latest version on Ubuntu:
-
-```
-$ wget https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_UbuntuNoble_amd64.deb
-$ sudo apt install ./ona-service_UbuntuNoble_amd64.deb
-```
+* [Docker](https://github.com/obsrvbl-oss/ona/blob/master/images/docker/Dockerfile)
 
 To monitor NetFlow traffic, you'll also need to install tools from the [CERT NetSA Security Suite](https://tools.netsa.cert.org/):
 

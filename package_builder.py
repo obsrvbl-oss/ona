@@ -19,21 +19,26 @@ from subprocess import check_call
 
 SystemInfo = namedtuple('SystemInfo', 'package_type,dependencies')
 
+PYTHON_DEPENDENCY = 'python3.13'
 REDHAT_COMMON = 'tcpdump',
-RASBPI_COMMON = 'tcpdump', 'adduser'
-UBUNTU_COMMON = 'tcpdump', 'adduser', 'python3', 'sudo'
+RASBPI_COMMON = 'tcpdump', 'adduser', PYTHON_DEPENDENCY
+DEBIAN_COMMON = 'tcpdump', 'adduser', PYTHON_DEPENDENCY, 'sudo'
 
 SYSTEM_INFO = {
     'RHEL_7':
-        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python3', 'sudo')),
+        SystemInfo(
+            'rpm',
+            REDHAT_COMMON + ('net-tools', PYTHON_DEPENDENCY, 'sudo')
+        ),
     'RHEL_8':
-        SystemInfo('rpm', REDHAT_COMMON + ('net-tools', 'python3', 'sudo')),
+        SystemInfo(
+            'rpm',
+            REDHAT_COMMON + ('net-tools', PYTHON_DEPENDENCY, 'sudo')
+        ),
     'RaspbianJessie':
         SystemInfo('deb', RASBPI_COMMON),
-    'UbuntuNoble':
-        SystemInfo('deb', UBUNTU_COMMON + ('systemd-sysv', 'net-tools')),
-    'UbuntuNobleContainer':
-        SystemInfo('deb', UBUNTU_COMMON + ('net-tools',)),
+    'DebianTrixieContainer':
+        SystemInfo('deb', DEBIAN_COMMON + ('net-tools',)),
 }
 
 

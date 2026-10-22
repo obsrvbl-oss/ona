@@ -184,8 +184,8 @@ class ExplodedIPTests(TestCase):
                 actual = exploded_ip(item)
                 expected = (
                     IPv6Address(int(ip_address(item)))
-                    .exploded
-                    .replace(':', '')
+                    .packed
+                    .hex()
                 )
                 self.assertEqual(actual, expected)
 

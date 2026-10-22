@@ -25,7 +25,6 @@ ONA_NAME_PREFIX = 'ona-'
 
 class BaseSystem:
     logs_group = 'adm'
-    admin_group = 'root'
 
     def add_user(self):
         """
@@ -56,17 +55,9 @@ class BaseSystem:
         Raises RuntimeError if something fails.
         """
         user_group = '{}:{}'.format(OBSRVBL_USER, OBSRVBL_USER)
-        pna_path = join(OBSRVBL_ROOT, 'pna/user/pna')
-
-        for args in (
-            ['chown', '-R', user_group, OBSRVBL_ROOT],
-            ['chown', 'root:{}'.format(self.admin_group), pna_path],
-        ):
-            return_code = call(args)
-
-            if return_code != 0:
-                msg = 'Failed during: {}'.format(' '.join(args))
-                raise RuntimeError(msg)
+        args = ['chown', '-R', user_group, OBSRVBL_ROOT]
+        if call(args) != 0:
+            raise RuntimeError('Failed during: {}'.format(' '.join(args)))
 
     def set_user_group(self):
         """
@@ -244,16 +235,9 @@ class RHEL_8(SystemdMixin, RedHatMixin, BaseSystem):
     """
 
 
-class UbuntuNoble(SystemdMixin, DebianMixin, BaseSystem):
+class DebianTrixieContainer(DebianMixin, BaseSystem):
     """
-    Supports Ubuntu installations with the systemd init system.
-    """
-
-
-class UbuntuNobleContainer(DebianMixin, BaseSystem):
-    """
-    Supports Ubuntu Noble and above, but skips the systemd service steps.
-    For use with Docker, etc.
+    Supports Debian Trixie containers, but skips the systemd service steps.
     """
     def install_services(self):
         pass

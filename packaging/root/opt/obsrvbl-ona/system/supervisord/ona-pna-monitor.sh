@@ -19,17 +19,12 @@ cd /opt/obsrvbl-ona/
 # Ensure log directory exists
 mkdir -p $PNA_LOGDIR
 
-# Bring up the interface
-/usr/bin/sudo /sbin/ifconfig $1 up promisc
-
-# Generate the BPF filter
-export OBSRVBL_BPF="`/usr/bin/python3 -c "print(' or '.join('(net {})'.format(x) for x in '$OBSRVBL_NETWORKS'.split()))"`"
-
-# Run the monitor
+# Run the monitor. The wrapper brings up the interface and builds the capture
+# filter; OBSRVBL_NETWORKS is passed one network per argument, without
+# pathname expansion.
+set -f
 exec /usr/bin/sudo \
-    /opt/obsrvbl-ona/pna/user/pna \
-        -i "$1" \
-        -N "$OBSRVBL_NETWORKS" \
-        -o "$PNA_LOGDIR" \
-        -Z "obsrvbl_ona" \
-        "$OBSRVBL_BPF"
+    /usr/libexec/obsrvbl-ona/ona-capture-pna \
+        "$1" \
+        "$PNA_LOGDIR" \
+        $OBSRVBL_NETWORKS
