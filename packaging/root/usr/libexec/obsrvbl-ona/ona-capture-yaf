@@ -1,0 +1,52 @@
+#!/bin/sh
+
+#  Copyright 2026 Cisco Systems, Inc.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Runs yaf as root for the obsrvbl_ona service user, with a fixed argument
+# vector. Does not read /opt/obsrvbl-ona/config, which that user can write.
+#
+# Usage: ona-capture-yaf <interface> <ipfix-port> [network ...]
+
+set -eu
+
+. /usr/libexec/obsrvbl-ona/ona-capture-common.sh
+
+if [ "$#" -lt 2 ]; then
+    ona_die "usage: $0 <interface> <ipfix-port> [network ...]"
+fi
+
+iface="$1"
+ipfix_port="$2"
+ona_require_iface "$iface"
+ona_require_integer "$ipfix_port" 1024 65535
+shift 2
+ona_build_bpf "$@"
+
+ona_set_promisc "$iface"
+
+exec /opt/yaf/bin/yaf \
+    --in="$iface" \
+    --live="pcap" \
+    --out="localhost" \
+    --filter="$ONA_BPF" \
+    --ipfix="tcp" \
+    --ipfix-port="$ipfix_port" \
+    --no-stats \
+    --idle-timeout="60" \
+    --active-timeout="120" \
+    --max-flows="100000" \
+    --silk \
+    --become-user="$ONA_USER" \
+    --loglevel="warning"

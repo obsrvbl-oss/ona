@@ -2,10 +2,10 @@
 # obsrvbl-ona service configuration
 Defaults:obsrvbl_ona !requiretty
 Defaults:obsrvbl_ona !syslog
-obsrvbl_ona ALL=(ALL) NOPASSWD: /sbin/ifconfig
-obsrvbl_ona ALL=(ALL) NOPASSWD: /opt/obsrvbl-ona/pna/user/pna
-obsrvbl_ona ALL=(ALL) NOPASSWD: /opt/yaf/bin/yaf
-obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/bin/tcpdump
+obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/libexec/obsrvbl-ona/ona-capture-eta
+obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/libexec/obsrvbl-ona/ona-capture-pdns
+obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/libexec/obsrvbl-ona/ona-capture-pna
+obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/libexec/obsrvbl-ona/ona-capture-yaf
 obsrvbl_ona ALL=(suricata) NOPASSWD: /opt/suricata/manage.sh
 obsrvbl_ona ALL=(ALL) NOPASSWD: /sbin/ipset restore -exist -file /opt/obsrvbl-ona/system/netflow-udp.ipset
 obsrvbl_ona ALL=(ALL) NOPASSWD: /usr/sbin/ipset restore -exist -file /opt/obsrvbl-ona/system/netflow-udp.ipset

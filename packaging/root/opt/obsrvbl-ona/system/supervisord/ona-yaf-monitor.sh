@@ -16,25 +16,12 @@
 . /opt/obsrvbl-ona/config
 cd /opt/obsrvbl-ona/
 
-# Bring up the interface
-/usr/bin/sudo /sbin/ifconfig $1 up promisc
-
-# Generate the BPF filter
-export OBSRVBL_BPF="`/usr/bin/python3 -c "print(' or '.join('(net {})'.format(x) for x in '$OBSRVBL_NETWORKS'.split()))"`"
-
-# Run the monitor
+# Run the monitor. The wrapper brings up the interface and builds the capture
+# filter; OBSRVBL_NETWORKS is passed one network per argument, without
+# pathname expansion.
+set -f
 exec /usr/bin/sudo \
-    /opt/yaf/bin/yaf \
-        --in="$1" \
-        --live="pcap" \
-        --out="localhost" \
-        --filter="$OBSRVBL_BPF" \
-        --ipfix="tcp" \
-        --ipfix-port="$2" \
-        --no-stats \
-        --idle-timeout="60" \
-        --active-timeout="120" \
-        --max-flows="100000" \
-        --silk \
-        --become-user="obsrvbl_ona" \
-        --loglevel="warning"
+    /usr/libexec/obsrvbl-ona/ona-capture-yaf \
+        "$1" \
+        "$2" \
+        $OBSRVBL_NETWORKS

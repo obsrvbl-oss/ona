@@ -33,8 +33,8 @@ class SnmpHandlerTest(TestCase):
 
         self.logger.error("onoes!")
 
-        self.assertEquals(len(mock_cmd.call_args_list), 1)
-        self.assertEquals(mock_cmd.call_args_list[0][0][0], [
+        self.assertEqual(len(mock_cmd.call_args_list), 1)
+        self.assertEqual(mock_cmd.call_args_list[0][0][0], [
             'snmptrap',
             '-v', '2c',
             '-c', 'user',
@@ -53,7 +53,7 @@ class SnmpHandlerTest(TestCase):
         self.logger.warn("what!!")
         self.logger.warn("huh?")
 
-        self.assertEquals(len(mock_cmd.call_args_list), 0)
+        self.assertEqual(len(mock_cmd.call_args_list), 0)
 
     @patch('ona_service.snmp_handler.subprocess.call')
     def test_v2_params(self, mock_cmd):
@@ -63,8 +63,8 @@ class SnmpHandlerTest(TestCase):
 
         self.logger.error('{"hello, my name is json": true}')
 
-        self.assertEquals(len(mock_cmd.call_args_list), 1)
-        self.assertEquals(mock_cmd.call_args_list[0][0][0], [
+        self.assertEqual(len(mock_cmd.call_args_list), 1)
+        self.assertEqual(mock_cmd.call_args_list[0][0][0], [
             'snmptrap',
             '-v', '2c',
             '-c', 'user1',
@@ -85,8 +85,8 @@ class SnmpHandlerTest(TestCase):
 
         self.logger.error('{"hello, my name is json": true}')
 
-        self.assertEquals(len(mock_cmd.call_args_list), 1)
-        self.assertEquals(mock_cmd.call_args_list[0][0][0], [
+        self.assertEqual(len(mock_cmd.call_args_list), 1)
+        self.assertEqual(mock_cmd.call_args_list[0][0][0], [
             'snmptrap',
             '-v', '3',
             '-e', '0x0607080910',

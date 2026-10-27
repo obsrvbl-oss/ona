@@ -46,13 +46,9 @@ class BaseSystemTestCase(TestCase):
 
         # Success
         mock_call.return_value = 0
-        commands = (
-            'chown -R {0}:{0} {1}'.format(obsrvbl_user, obsrvbl_root),
-            'chown root:root {}pna/user/pna'.format(obsrvbl_root),
-        )
-        expected_calls = [MockCall(x.split()) for x in commands]
         self.base_system.set_owner()
-        mock_call.assert_has_calls(expected_calls)
+        command = 'chown -R {0}:{0} {1}'.format(obsrvbl_user, obsrvbl_root)
+        mock_call.assert_called_once_with(command.split())
 
         # Failure
         mock_call.return_value = 1

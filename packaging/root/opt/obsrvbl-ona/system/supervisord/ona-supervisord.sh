@@ -24,18 +24,18 @@ mkdir -p /opt/obsrvbl-ona/logs/ona_service
 
 # Check in with the site for configuration updates
 if [ -e /usr/bin/timeout ]; then
-    /usr/bin/timeout 60s /usr/bin/python3 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+    /usr/bin/timeout 60s /usr/bin/python3.13 /opt/obsrvbl-ona/ona_service/ona.py --update-only
 else
-    /usr/bin/python3 /opt/obsrvbl-ona/ona_service/ona.py --update-only
+    /usr/bin/python3.13 /opt/obsrvbl-ona/ona_service/ona.py --update-only
 fi
 
 . /opt/obsrvbl-ona/config
 
 # Set up supervisord's configuration file
-/usr/bin/python3 /opt/obsrvbl-ona/ona_service/supervisor_config.py
+/usr/bin/python3.13 /opt/obsrvbl-ona/ona_service/supervisor_config.py
 
 # Run supervisord
-exec /usr/bin/python3 \
+exec /usr/bin/python3.13 \
     -m supervisor.supervisord \
     --nodaemon \
     -c /opt/obsrvbl-ona/system/supervisord/ona-supervisord.conf

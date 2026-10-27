@@ -22,7 +22,7 @@ from ona_service.flowcap_config import (
 INFILE_PATH = '/opt/obsrvbl-ona/system/supervisord/ona-supervisord.base'
 OUTFILE_PATH = '/opt/obsrvbl-ona/system/supervisord/ona-supervisord.conf'
 
-PYTHON_PATH = '/usr/bin/python3'
+PYTHON_PATH = '/usr/bin/python3.13'
 LOG_PATH = '/opt/obsrvbl-ona/logs/ona_service/{}.log'
 
 DEFAULT_PARAMETERS = {

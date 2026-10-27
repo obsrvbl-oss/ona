@@ -78,7 +78,7 @@ class ApiTestCase(TestCase):
             f.seek(0)
             remote_path = self.api.send_file('mytype', f.name, time)
 
-        self.assertEquals(remote_path, 'remote_path!')
+        self.assertEqual(remote_path, 'remote_path!')
 
         file_url = '{base_url}/{YY}/{M}/{DD}/{T}/{name}'.format(
             base_url='https://sensor.ext.obsrvbl.com/sign/mytype',
@@ -103,7 +103,7 @@ class ApiTestCase(TestCase):
             'SUPERGET', 'url!',
             headers='headers!', data=b'hee hee hee', verify=True,
             timeout=HTTP_TIMEOUT)
-        self.assertEquals(mock_requests.request.call_count, 1)
+        self.assertEqual(mock_requests.request.call_count, 1)
         mock_upload_response.raise_for_status.assert_called_once_with()
 
     @patch('ona_service.api.requests', autospec=True)
@@ -137,7 +137,7 @@ class ApiTestCase(TestCase):
                         'mytype', f.name, time, **kwargs
                     )
 
-                self.assertEquals(remote_path, 'remote_path!')
+                self.assertEqual(remote_path, 'remote_path!')
 
                 file_url = '{base_url}/{YY}/{M}/{DD}/{T}/{name}'.format(
                     base_url='https://sensor.ext.obsrvbl.com/sign/mytype',
@@ -156,7 +156,7 @@ class ApiTestCase(TestCase):
                 )
                 mock_raise_for_status = mock_get.return_value.raise_for_status
                 mock_raise_for_status.assert_called_once_with()
-                self.assertEquals(mock_requests.request.call_count, 1)
+                self.assertEqual(mock_requests.request.call_count, 1)
 
     @patch('ona_service.api.requests', autospec=True)
     def test_send_file_fail(self, mock_requests):

@@ -24,12 +24,8 @@ sleep `expr $OBSRVBL_PDNS_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_PDNS_CAPTURE
 
 # Run the monitor
 exec /usr/bin/sudo \
-    /usr/bin/tcpdump \
-        -w "$OBSRVBL_PDNS_PCAP_DIR/pdns_%s.pcap" \
-        -i "$OBSRVBL_PDNS_CAPTURE_IFACE" \
-        -s 0 \
-        -c `expr $OBSRVBL_PDNS_CAPTURE_SECONDS \* $OBSRVBL_PDNS_PPS_LIMIT` \
-        -G "$OBSRVBL_PDNS_CAPTURE_SECONDS" \
-        -U \
-        -Z "obsrvbl_ona" \
-        "udp src port 53"
+    /usr/libexec/obsrvbl-ona/ona-capture-pdns \
+        "$OBSRVBL_PDNS_CAPTURE_IFACE" \
+        "$OBSRVBL_PDNS_PCAP_DIR" \
+        "$OBSRVBL_PDNS_CAPTURE_SECONDS" \
+        "$OBSRVBL_PDNS_PPS_LIMIT"

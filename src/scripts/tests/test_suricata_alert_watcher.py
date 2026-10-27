@@ -110,7 +110,7 @@ class SuricataAlertWatcherTest(TestCase):
             'log_type': 'suricata',
             'ip': '10.1.1.1',
         })
-        self.assertEquals(len(watcher.api.send_signal.call_args_list), 2)
+        self.assertEqual(len(watcher.api.send_signal.call_args_list), 2)
 
     def test_upload_compressed(self):
         watcher = SuricataAlertWatcher(log_dir=self.temp_dir.name)
@@ -147,8 +147,8 @@ class SuricataAlertWatcherTest(TestCase):
         watcher.api.send_file.return_value = 'send_destination'
         watcher._upload(now)
 
-        self.assertEquals(watcher.api.send_file.call_args_list, [])
-        self.assertEquals(watcher.api.call_args_list, [])
+        self.assertEqual(watcher.api.send_file.call_args_list, [])
+        self.assertEqual(watcher.api.call_args_list, [])
 
     @patch(patch_path('get_ip'), dummy_get_ip)
     @patch(patch_path('utcoffset'), dummy_utcoffset)
@@ -174,10 +174,10 @@ class SuricataAlertWatcherTest(TestCase):
         watcher._upload(now)
         self.assertFalse(path.exists(after_rename))
 
-        self.assertEquals(watcher.api.send_file.call_args_list, [
+        self.assertEqual(watcher.api.send_file.call_args_list, [
             call('logs', after_rename, now, suffix='suricata'),
         ])
-        self.assertEquals(watcher.api.send_signal.call_args_list, [
+        self.assertEqual(watcher.api.send_signal.call_args_list, [
             call('logs', {
                 'path': 'send_destination',
                 'utcoffset': 0,
@@ -201,7 +201,7 @@ class SuricataAlertWatcherTest(TestCase):
         with open(my_rules) as r:
             contents = r.read()
 
-        self.assertEquals(contents, 'foobaroof')
+        self.assertEqual(contents, 'foobaroof')
         mock_check_output.assert_called_once_with(
             ['sudo', '-u', 'suricata', MANAGE_SCRIPT, 'reload-config']
         )
@@ -247,7 +247,7 @@ class SuricataAlertWatcherTest(TestCase):
 
         mock_rotate_logs.assert_called_with(watcher)
         mock_upload.assert_called_with(watcher, now, compress=True)
-        self.assertEquals(mock_rules.call_count, 1)
+        self.assertEqual(mock_rules.call_count, 1)
 
     @patch(patch_path('check_output'), autospec=True)
     def test_execute_no_suricata(self, mock_check_output):

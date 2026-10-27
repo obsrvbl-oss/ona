@@ -1,0 +1,51 @@
+#!/bin/sh
+
+#  Copyright 2026 Cisco Systems, Inc.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Captures DNS responses with tcpdump as root for the obsrvbl_ona service
+# user, with a fixed argument vector. Does not read /opt/obsrvbl-ona/config,
+# which that user can write.
+#
+# Usage: ona-capture-pdns <interface> <log-directory> <seconds> <pps-limit>
+
+set -eu
+
+. /usr/libexec/obsrvbl-ona/ona-capture-common.sh
+
+if [ "$#" -ne 4 ]; then
+    ona_die "usage: $0 <interface> <log-directory> <seconds> <pps-limit>"
+fi
+
+iface="$1"
+seconds="$3"
+pps_limit="$4"
+ona_require_capture_iface "$iface"
+ona_require_log_dir "$2" pdns
+ona_require_integer "$seconds" 1 86400
+ona_require_integer "$pps_limit" 1 1000000
+
+# tcpdump takes -c as a C int, so check the product as well.
+packet_limit=$(( seconds * pps_limit ))
+ona_require_integer "$packet_limit" 1 2000000000
+
+exec /usr/bin/tcpdump \
+    -w "${ONA_LOG_PATH}/pdns_%s.pcap" \
+    -i "$iface" \
+    -s 0 \
+    -c "$packet_limit" \
+    -G "$seconds" \
+    -U \
+    -Z "$ONA_USER" \
+    "udp src port 53"

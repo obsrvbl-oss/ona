@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ARCH ?= amd64
-VERSION := 5.1.3
+VERSION := 5.1.4
 
 SCRIPTS_DIR := src/scripts
 uPNA_DIR := src/uPNA
 IPFIX_DIR := src/ipfix
 
 OBSRVBL_ROOT := packaging/root/opt/obsrvbl-ona
+LIBEXEC_DIR := packaging/root/usr/libexec/obsrvbl-ona
 
 .PHONY: all
 all:
@@ -47,8 +48,7 @@ copy:
 	make -C ${SCRIPTS_DIR} vendor clean
 	mkdir -p ${OBSRVBL_ROOT}/
 	echo ${VERSION} > ${OBSRVBL_ROOT}/version
-	mkdir -p ${OBSRVBL_ROOT}/pna/user/
-	cp ${uPNA_DIR}/module/pna ${OBSRVBL_ROOT}/pna/user/pna
+	cp ${uPNA_DIR}/module/pna ${LIBEXEC_DIR}/pna
 	mkdir -p ${OBSRVBL_ROOT}/ipfix/
 	cp -r ${IPFIX_DIR}/* ${OBSRVBL_ROOT}/ipfix/
 	mkdir -p ${OBSRVBL_ROOT}/ona_service/
@@ -71,13 +71,9 @@ ona-service_RaspbianJessie_%.deb:
 	mkdir -p $(dir $@)
 	python package_builder.py $(notdir $*) ${VERSION} RaspbianJessie
 
-ona-service_UbuntuNoble_%.deb:
+ona-service_DebianTrixieContainer_%.deb:
 	mkdir -p $(dir $@)
-	python package_builder.py $(notdir $*) ${VERSION} UbuntuNoble
-
-ona-service_UbuntuNobleContainer_%.deb:
-	mkdir -p $(dir $@)
-	python package_builder.py $(notdir $*) ${VERSION} UbuntuNobleContainer
+	python package_builder.py $(notdir $*) ${VERSION} DebianTrixieContainer
 
 .PHONY: clean
 clean:
@@ -86,7 +82,7 @@ clean:
 	rm -rf ${OBSRVBL_ROOT}/netflow/
 	rm -rf ${OBSRVBL_ROOT}/ipfix/
 	rm -rf ${OBSRVBL_ROOT}/ona_service/
-	rm -rf ${OBSRVBL_ROOT}/pna/
+	rm -f ${LIBEXEC_DIR}/pna
 	rm -rf ${OBSRVBL_ROOT}/version
 
 .PHONY: realclean

@@ -16,4 +16,4 @@
 
 set -e
 
-PYTHONPATH="/opt/obsrvbl-ona:/opt/obsrvbl-ona/system/python-packages" /usr/bin/python3 /opt/obsrvbl-ona/ona_service/installation/postinst.py "RHEL_8"
+PYTHONPATH="/opt/obsrvbl-ona:/opt/obsrvbl-ona/system/python-packages" /usr/bin/python3.13 /opt/obsrvbl-ona/ona_service/installation/postinst.py "RHEL_8"

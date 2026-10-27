@@ -6,7 +6,9 @@ author:
 revision: 0
 --->
 ##### Requirements before start 
-- RaspberryPI OS (32 or 64 bits); 
+- RaspberryPI OS (32 or 64 bits);
+- An external package repository supplying a `python3.13` package that
+  installs `/usr/bin/python3.13`;
 - Make sure you have a monitor, mouse and keyboard connected in the device, at least until you get SSH access to it. 
 
 ##### Required softwares
@@ -17,7 +19,7 @@ revision: 0
 1. Download the .deb for ONA and tar.gz's for SILK and YAF:
 ```bash
 cd /tmp
-wget https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.3/ona-service_RaspbianJessie_armhf.deb
+wget https://assets-production.obsrvbl.com/ona-packages/obsrvbl-ona/v5.1.4/ona-service_RaspbianJessie_armhf.deb
 wget https://tools.netsa.cert.org/releases/silk-3.19.2.tar.gz
 wget https://tools.netsa.cert.org/releases/yaf-2.12.1.tar.gz
 ```
@@ -55,5 +57,3 @@ sudo apt install ./ona-service_RaspbianJessie_armhf.deb
 ```
 
 7. After this last step, if you followed the SCA sensor guide, your sensor should be appearing within your SCA dashboard. Wait around 10-20min before the console start to show the netflows
-
-

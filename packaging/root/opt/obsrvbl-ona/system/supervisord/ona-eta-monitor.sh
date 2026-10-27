@@ -24,13 +24,9 @@ sleep `expr $OBSRVBL_ETA_CAPTURE_SECONDS - \`date +%s\` % $OBSRVBL_ETA_CAPTURE_S
 
 # Run the monitor
 exec /usr/bin/sudo \
-    /usr/bin/tcpdump \
-        -w "$OBSRVBL_ETA_PCAP_DIR/logs_%s.pcap" \
-        -i "$OBSRVBL_ETA_CAPTURE_IFACE" \
-        -s 0 \
-        -C "$OBSRVBL_ETA_CAPTURE_MBITS" \
-        -G "$OBSRVBL_ETA_CAPTURE_SECONDS" \
-        -W "1" \
-        -U \
-        -Z "obsrvbl_ona" \
-        "(udp dst port $OBSRVBL_ETA_UDP_PORT) and ((udp[8:2] == 9) or (udp[8:2] == 10))"
+    /usr/libexec/obsrvbl-ona/ona-capture-eta \
+        "$OBSRVBL_ETA_CAPTURE_IFACE" \
+        "$OBSRVBL_ETA_PCAP_DIR" \
+        "$OBSRVBL_ETA_CAPTURE_SECONDS" \
+        "$OBSRVBL_ETA_CAPTURE_MBITS" \
+        "$OBSRVBL_ETA_UDP_PORT"

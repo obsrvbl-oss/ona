@@ -21,11 +21,10 @@ vendor:
 	touch "${PYTHONPATH}/supervisor/__init__.py"
 
 requirements: vendor
-	python3 -m pip install -r requirements.txt
-	python3 -m pip install flake8 coverage
+	pip install --target="${PYTHONPATH}" -U flake8 coverage
 
 flake8:
-	flake8 --max-complexity 10 .
+	PYTHONPATH="${PYTHONPATH}" python3 -m flake8 --max-complexity 10 .
 
 quicktest:
 	PYTHONPATH="${PYTHONPATH}" python3 -m unittest -v ${tests}
@@ -33,8 +32,8 @@ quicktest:
 test: requirements flake8 quicktest
 
 coverage: requirements flake8
-	PYTHONPATH="${PYTHONPATH}" coverage run -m unittest -v
-	coverage report
+	PYTHONPATH="${PYTHONPATH}" python3 -m coverage run -m unittest -v
+	PYTHONPATH="${PYTHONPATH}" python3 -m coverage report
 
 clean:
 	find . -name '*.py[co]' -delete
